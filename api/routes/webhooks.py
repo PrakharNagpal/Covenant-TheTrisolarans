@@ -140,6 +140,7 @@ def _linear_issue_text(data: dict) -> str:
     return "\n\n".join(part for part in [title, description] if part)
 
 
+<<<<<<< HEAD
 async def _process_linear_decision_text(
     text: str,
     source_ref: str,
@@ -220,6 +221,15 @@ def _parse_tool_role_decision(text: str) -> tuple[str, str] | None:
         r"i am going to|we are going to|i want to|no i want to|going to|going with|"
         r"we're using|we are using|we use|we chose|we picked|we agreed on|"
         r"we'll use|we need to use|we should use|we're going to)\s+(use\s+)?",
+=======
+def _parse_tool_role_decision(text: str) -> tuple[str, str] | None:
+    normalized = " ".join(text.lower().strip().split())
+    normalized = re.sub(
+        r"^(no[,\s]+)?(let'?s|we decided to|we will|we'll|we should|should|we're going to|"
+        r"i am going to|we are going to|i want to|no i want to|going to|going with|"
+        r"we're using|we are using|we use|we chose|we picked|we agreed on|"
+        r"we'll use|we need to use|we should use)\s+",
+>>>>>>> 52d12a2 (update linear)
         "",
         normalized,
     )
@@ -227,7 +237,11 @@ def _parse_tool_role_decision(text: str) -> tuple[str, str] | None:
 
     patterns = [
         r"^(?:decided to use|use|choose|chose|picked|select|selected)\s+(?P<tool>.+?)\s+(?:as|for)\s+(?:our|the|a|an)?\s*(?P<role>.+)$",
+<<<<<<< HEAD
         r"^(?P<tool>.+?)\s+(?:as|for)\s+(?:our\s+|the\s+|a\s+|an\s+)?(?P<role>.+)$",
+=======
+        r"^(?P<tool>.+?)\s+(?:as|for)\s+(?:our|the|a|an)?\s*(?P<role>.+)$",
+>>>>>>> 52d12a2 (update linear)
         r"^(?P<tool>.+?)\s+is\s+(?:our|the|a|an)\s+(?P<role>.+)$",
     ]
     for pattern in patterns:
@@ -519,6 +533,82 @@ async def process_slack_interaction(payload: dict):
     )
 
 
+<<<<<<< HEAD
+=======
+async def _process_linear_decision_text(
+    text: str,
+    source_ref: str,
+    issue_id: str | None,
+    participant: str,
+    created_at: str | None,
+):
+    from agent.classifier import classify_decision
+    from agent.contradiction import find_contradictions
+
+    if not text:
+        print(f"[LINEAR WEBHOOK] empty text for {source_ref}; skipping", flush=True)
+        return
+
+    decisions = await db.get_all_decisions()
+    contradictions = _same_role_tool_contradictions(text, decisions)
+    classification = await classify_decision(text)
+    print(
+        f"[LINEAR WEBHOOK] classified {source_ref} as {classification.get('label')}",
+        flush=True,
+    )
+    if classification["label"] != "DECISION" and not contradictions:
+        return
+
+    existing = await db.get_decision_by_source_ref("linear", source_ref)
+    if existing:
+        print(f"[LINEAR WEBHOOK] already captured {source_ref}", flush=True)
+        return
+
+    if not contradictions:
+        contradictions = await find_contradictions(text, decisions)
+
+    new_decision = {
+        "id": str(uuid.uuid4()),
+        "summary": classification.get("extracted_choice") or text[:200],
+        "rationale": text,
+        "participants": [participant],
+        "source": "linear",
+        "source_ref": source_ref,
+        "created_at": created_at or datetime.now(timezone.utc).isoformat(),
+    }
+
+    if not contradictions:
+        await db.upsert_decision(new_decision)
+        print(
+            f"[LINEAR WEBHOOK] inserted {new_decision['id']} from {source_ref}",
+            flush=True,
+        )
+        return
+
+    existing_alert = await db.get_alert_by_source_ref("linear", source_ref)
+    if existing_alert:
+        print(f"[LINEAR WEBHOOK] already alerted for {source_ref}", flush=True)
+        return
+
+    top = contradictions[0]
+    await db.insert_alert(top, source_ref, "linear")
+    if not issue_id:
+        print("[LINEAR WEBHOOK] contradiction found but issue id missing", flush=True)
+        return
+
+    body = format_linear_contradiction_comment(top, text)
+    try:
+        comment_id = await post_issue_comment(issue_id, body)
+    except Exception as exc:
+        print(f"[LINEAR WEBHOOK] failed to post contradiction comment: {exc}", flush=True)
+        return
+    print(
+        f"[LINEAR WEBHOOK] posted contradiction comment {comment_id or ''}",
+        flush=True,
+    )
+
+
+>>>>>>> 52d12a2 (update linear)
 async def process_linear_comment(data: dict):
     print(f"[LINEAR WEBHOOK] processing comment {data.get('id', '')}", flush=True)
     text = data.get("body", "")
