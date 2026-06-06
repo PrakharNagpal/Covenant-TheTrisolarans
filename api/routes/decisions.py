@@ -1,5 +1,6 @@
-# P2 lane — decisions routes
+# Lane: P2 backend
 from fastapi import APIRouter
+
 from api import db
 
 router = APIRouter()
@@ -12,9 +13,9 @@ async def list_decisions():
 
 @router.get("/decisions/{decision_id}")
 async def get_decision(decision_id: str):
-    return await db.get_decision_by_id(decision_id)
+    return await db.get_decision(decision_id)
 
 
 @router.get("/decisions/{decision_id}/lineage")
 async def get_lineage(decision_id: str):
-    return await db.get_lineage_for_decision(decision_id)
+    return await db.get_lineage(decision_id)
