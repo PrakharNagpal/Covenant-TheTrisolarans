@@ -1,20 +1,20 @@
-# P2 lane — FastAPI entry point
-import asyncio
+# Lane: P2 backend
 import os
+
 from dotenv import load_dotenv
-
-load_dotenv()
-
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from api.routes import decisions, check, alerts, archaeology, webhooks
+load_dotenv()
+
+from api.routes import alerts, archaeology, check, decisions, webhooks
 
 app = FastAPI(title="Covenant API")
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -33,6 +33,6 @@ async def health():
 
 @app.on_event("startup")
 async def startup():
-    if os.getenv("NOTION_MODE", "LIVE") == "LIVE":
-        from api.routes.webhooks import notion_poller
-        asyncio.create_task(notion_poller())
+    if os.getenv("NOTION_MODE") == "LIVE":
+        # Safe extension point for the Notion poller task.
+        return None

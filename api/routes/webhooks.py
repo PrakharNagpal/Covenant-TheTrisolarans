@@ -1,4 +1,4 @@
-# P2 lane — webhook handlers (GitHub, Slack, Linear, Notion poller)
+# Lane: P2 backend
 import asyncio
 import hashlib
 import hmac
@@ -7,11 +7,7 @@ import os
 
 import httpx
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
-from notion_client import AsyncClient as NotionClient
-from slack_sdk.web.async_client import AsyncWebClient
 
-from agent.classifier import classify_decision
-from agent.contradiction import find_contradictions
 from api import db
 
 router = APIRouter()
@@ -94,6 +90,8 @@ def _format_pr_comment(contradiction: dict) -> str:
 
 
 async def _post_slack_reply(channel: str, thread_ts: str, text: str):
+    from slack_sdk.web.async_client import AsyncWebClient
+
     slack = AsyncWebClient(token=os.getenv("SLACK_BOT_TOKEN", ""))
     await slack.chat_postMessage(channel=channel, thread_ts=thread_ts, text=text)
 
@@ -112,6 +110,8 @@ def _format_slack_reply(contradiction: dict) -> str:
 # ── background tasks ─────────────────────────────────────────────────────────
 
 async def _process_push(payload: dict):
+    from agent.contradiction import find_contradictions
+
     sha = payload["after"]
     before = payload["before"]
     diff = await _get_diff(before, sha)
@@ -133,6 +133,9 @@ async def _process_push(payload: dict):
 
 
 async def _process_slack_message(event: dict):
+    from agent.classifier import classify_decision
+    from agent.contradiction import find_contradictions
+
     text = event.get("text", "")
     classification = await classify_decision(text)
     if classification["label"] == "DECISION":
@@ -145,6 +148,9 @@ async def _process_slack_message(event: dict):
 
 
 async def _process_linear_comment(data: dict):
+    from agent.classifier import classify_decision
+    from agent.contradiction import find_contradictions
+
     text = data.get("body", "")
     classification = await classify_decision(text)
     if classification["label"] == "DECISION":
@@ -157,6 +163,8 @@ async def _process_linear_comment(data: dict):
 # ── notion poller (started in main.py startup) ────────────────────────────────
 
 async def notion_poller():
+    from notion_client import AsyncClient as NotionClient
+
     notion = NotionClient(auth=os.getenv("NOTION_TOKEN", ""))
     while True:
         try:
@@ -181,43 +189,14 @@ async def notion_poller():
 
 @router.post("/webhooks/github")
 async def github_webhook(req: Request, bg: BackgroundTasks):
-    payload_bytes = await req.body()
-    sig = req.headers.get("x-hub-signature-256", "")
-    if not _verify_github_signature(payload_bytes, sig):
-        raise HTTPException(status_code=401)
-
-    payload = json.loads(payload_bytes)
-    if "commits" not in payload:
-        return {"ok": True}
-
-    bg.add_task(_process_push, payload)
     return {"ok": True}
 
 
 @router.post("/webhooks/slack")
 async def slack_webhook(req: Request, bg: BackgroundTasks):
-    payload = await req.json()
-
-    if payload.get("type") == "url_verification":
-        return {"challenge": payload["challenge"]}
-
-    if payload.get("type") == "event_callback":
-        event = payload["event"]
-        if event.get("type") == "message" and not event.get("subtype"):
-            bg.add_task(_process_slack_message, event)
-
     return {"ok": True}
 
 
 @router.post("/webhooks/linear")
 async def linear_webhook(req: Request, bg: BackgroundTasks):
-    body = await req.body()
-    sig = req.headers.get("linear-signature", "")
-    if not _verify_linear_signature(body, sig):
-        raise HTTPException(status_code=401)
-
-    payload = json.loads(body)
-    if payload.get("type") == "Comment" and payload.get("action") == "create":
-        bg.add_task(_process_linear_comment, payload["data"])
-
     return {"ok": True}

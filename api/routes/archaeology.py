@@ -1,7 +1,6 @@
-# P2 lane — archaeology route
+# Lane: P2 backend
 from fastapi import APIRouter
 from pydantic import BaseModel
-from agent.archaeology import answer_archaeology
 
 router = APIRouter()
 
@@ -12,5 +11,6 @@ class ArchaeologyRequest(BaseModel):
 
 @router.post("/archaeology")
 async def archaeology(req: ArchaeologyRequest):
-    answer = await answer_archaeology(req.question)
-    return {"answer": answer}
+    from agent.archaeology import answer_archaeology
+
+    return await answer_archaeology(req.question)
