@@ -1,0 +1,185 @@
+[
+  {
+    "ts": "1704153540.000090",
+    "user": "alice",
+    "text": "Okay team — been thinking about auth. What are we landing on, sessions or JWT?",
+    "type": "message",
+    "channel": "eng",
+    "_classification": "DISCUSSION"
+  },
+  {
+    "ts": "1704153600.000100",
+    "user": "bob",
+    "text": "Let's go with JWT. Stateless, works well for mobile, and we don't need a session store. Sessions would mean either sticky routing or Redis just for auth — not worth it at our scale.",
+    "type": "message",
+    "channel": "eng",
+    "_classification": "DECISION",
+    "_decision_id": "d1a2b3c4-0001-4000-a000-000000000001"
+  },
+  {
+    "ts": "1704153660.000110",
+    "user": "alice",
+    "text": "Agreed. Locking that in. JWT it is.",
+    "type": "message",
+    "channel": "eng",
+    "_classification": "NOISE"
+  },
+  {
+    "ts": "1706914800.000200",
+    "user": "priya",
+    "text": "Database decision: we're going with Postgres over Mongo. Our data is relational, we need ACID for payments, and JSONB covers any flexibility needs. Raj is aligned on this.",
+    "type": "message",
+    "channel": "eng",
+    "_classification": "DECISION",
+    "_decision_id": "d1a2b3c4-0002-4000-a000-000000000002"
+  },
+  {
+    "ts": "1710504000.000400",
+    "user": "priya",
+    "text": "Legal came back on our data model. We need to move all PII out of the orders table — full stop. Users table holds name, email, address. Orders table keeps only user_id FK. @security-lead and I aligned on this.",
+    "type": "message",
+    "channel": "eng",
+    "_classification": "DECISION",
+    "_decision_id": "d1a2b3c4-0004-4000-a000-000000000004"
+  },
+  {
+    "ts": "1712098800.000500",
+    "user": "bob",
+    "text": "Deployment sorted: Vercel for frontend (zero-config Next.js), Railway for backend API. AWS was discussed and rejected — the ops overhead isn't worth it for 3 of us.",
+    "type": "message",
+    "channel": "eng",
+    "_classification": "DECISION",
+    "_decision_id": "d1a2b3c4-0005-4000-a000-000000000005"
+  },
+  {
+    "ts": "1712098900.000510",
+    "user": "alice",
+    "text": "Railway charges by compute time right? What's the rough monthly cost?",
+    "type": "message",
+    "channel": "eng",
+    "_classification": "DISCUSSION"
+  },
+  {
+    "ts": "1712098980.000520",
+    "user": "bob",
+    "text": "About $20/month at our current usage. Fine for now.",
+    "type": "message",
+    "channel": "eng",
+    "_classification": "NOISE"
+  },
+  {
+    "ts": "1715169600.000700",
+    "user": "priya",
+    "text": "API versioning: we're using URL path prefixes (/v1/, /v2/). Header versioning was proposed but rejected — it's a debugging nightmare and our integration partners hate it. URL versioning is explicit and cache-friendly.",
+    "type": "message",
+    "channel": "eng",
+    "_classification": "DECISION",
+    "_decision_id": "d1a2b3c4-0007-4000-a000-000000000007"
+  },
+  {
+    "ts": "1716566400.000800",
+    "user": "bob",
+    "text": "Rate limits locked: 100 requests per minute per authenticated user. We looked at 60 but it would break one integration partner's sync job. 100 gives 2.5x headroom above our p99.",
+    "type": "message",
+    "channel": "eng",
+    "_classification": "DECISION",
+    "_decision_id": "d1a2b3c4-0008-4000-a000-000000000008"
+  },
+  {
+    "ts": "1718625600.000900",
+    "user": "raj",
+    "text": "Redis scope decision: we use Redis for rate-limit counters and ephemeral session metadata (cart state etc) ONLY. It is NOT a primary data store. Durable data goes to Postgres always.",
+    "type": "message",
+    "channel": "eng",
+    "_classification": "DECISION",
+    "_decision_id": "d1a2b3c4-0009-4000-a000-000000000009"
+  },
+  {
+    "ts": "1719993600.001000",
+    "user": "alice",
+    "text": "Monorepo it is. Single repo for frontend, backend, and shared types. Polyrepo was considered and rejected — cross-repo coordination overhead for a 3-person team isn't worth it. @bob agreed.",
+    "type": "message",
+    "channel": "eng",
+    "_classification": "DECISION",
+    "_decision_id": "d1a2b3c4-0010-4000-a000-000000000010"
+  },
+  {
+    "ts": "1720080000.001100",
+    "user": "raj",
+    "text": "Lunch today? I'm thinking the ramen place downstairs",
+    "type": "message",
+    "channel": "eng",
+    "_classification": "NOISE"
+  },
+  {
+    "ts": "1720166400.001200",
+    "user": "alice",
+    "text": "Has anyone looked at the new Bun runtime? Might be faster than Node for our backend",
+    "type": "message",
+    "channel": "eng",
+    "_classification": "DISCUSSION"
+  },
+  {
+    "ts": "1720252800.001300",
+    "user": "bob",
+    "text": "Stand-up in 5 minutes everyone",
+    "type": "message",
+    "channel": "eng",
+    "_classification": "NOISE"
+  },
+  {
+    "ts": "1722672000.002001",
+    "user": "raj",
+    "text": "Hey — thinking we should switch auth to session-based. JWT has been causing issues with token revocation when users change their passwords. Sessions would let us invalidate immediately.",
+    "type": "message",
+    "channel": "eng",
+    "_classification": "DECISION",
+    "_is_contradiction": true,
+    "_contradicts_decision_id": "d1a2b3c4-0001-4000-a000-000000000001",
+    "_contradiction_note": "Directly contradicts the Jan 14 JWT decision"
+  },
+  {
+    "ts": "1722758400.002002",
+    "user": "alice",
+    "text": "I think we should store the user's full name and email in the orders table for easier reporting. Joining to the users table every time is annoying.",
+    "type": "message",
+    "channel": "eng",
+    "_classification": "DECISION",
+    "_is_contradiction": true,
+    "_contradicts_decision_id": "d1a2b3c4-0004-4000-a000-000000000004",
+    "_contradiction_note": "Contradicts the Mar 15 no-PII-in-orders decision"
+  },
+  {
+    "ts": "1722844800.002003",
+    "user": "raj",
+    "text": "What if we move to a 4-step checkout? Split delivery address and payment onto separate pages — our UX research says users trust it more.",
+    "type": "message",
+    "channel": "eng",
+    "_classification": "DISCUSSION",
+    "_is_contradiction": true,
+    "_contradicts_decision_id": "d1a2b3c4-0003-4000-a000-000000000003",
+    "_contradiction_note": "Contradicts the Feb 28 3-step checkout decision"
+  },
+  {
+    "ts": "1722931200.002004",
+    "user": "bob",
+    "text": "I want to start using Redis as our primary read cache — query Postgres once, cache everything in Redis, serve from there. Would dramatically reduce DB load.",
+    "type": "message",
+    "channel": "eng",
+    "_classification": "DECISION",
+    "_is_contradiction": true,
+    "_contradicts_decision_id": "d1a2b3c4-0009-4000-a000-000000000009",
+    "_contradiction_note": "Contradicts the Jun 10 Redis-not-as-primary-store decision"
+  },
+  {
+    "ts": "1723017600.002005",
+    "user": "alice",
+    "text": "Should we switch to header-based API versioning? I've been reading that it's more semantically correct for REST and some of our enterprise clients prefer it.",
+    "type": "message",
+    "channel": "eng",
+    "_classification": "DISCUSSION",
+    "_is_contradiction": true,
+    "_contradicts_decision_id": "d1a2b3c4-0007-4000-a000-000000000007",
+    "_contradiction_note": "Contradicts the May 8 URL-path versioning decision"
+  }
+]

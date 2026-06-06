@@ -1,8 +1,11 @@
 # P1 lane — archaeology RAG
 import json
 import os
+from dotenv import load_dotenv
 from openai import AsyncOpenAI
 from supabase import create_client
+
+load_dotenv()
 
 client = AsyncOpenAI()
 

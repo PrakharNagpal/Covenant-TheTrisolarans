@@ -1,0 +1,19 @@
+diff --git a/README.md b/README.md
+index 3456789..cdefgab 100644
+--- a/README.md
++++ b/README.md
+@@ -1,9 +1,11 @@
+ # covenant-demo-app
+ 
+ A simple Node.js/Express API used as the demo target repository for **Covenant**.
+ 
+ This repo intentionally uses JWT for authentication (decided by the team on Jan 14, 2026).
+ Any change to the auth strategy will be caught by the Covenant agent.
+ 
+ ## Stack
+ - Express for routing
+ - jsonwebtoken for authentication
+ - 3-step checkout flow
++
++## Running locally
++Run `npm install` then `npm start`. Server starts on port 3001.

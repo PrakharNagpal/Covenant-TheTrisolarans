@@ -1,6 +1,9 @@
 # P1 lane — decision classifier
 import json
+from dotenv import load_dotenv
 from openai import AsyncOpenAI
+
+load_dotenv()
 
 client = AsyncOpenAI()
 

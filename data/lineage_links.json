@@ -1,0 +1,142 @@
+[
+  {
+    "id": "l0000001",
+    "decision_id": "d1a2b3c4-0001-4000-a000-000000000001",
+    "artifact_type": "code",
+    "artifact_ref": "api/auth.js:1-87",
+    "note": "Core JWT sign and verify functions — entire file exists because of the Jan 14 JWT decision"
+  },
+  {
+    "id": "l0000002",
+    "decision_id": "d1a2b3c4-0001-4000-a000-000000000001",
+    "artifact_type": "code",
+    "artifact_ref": "api/middleware/auth_guard.js:12-45",
+    "note": "Token extraction and verification middleware — stateless check, no DB call, direct result of JWT choice"
+  },
+  {
+    "id": "l0000003",
+    "decision_id": "d1a2b3c4-0001-4000-a000-000000000001",
+    "artifact_type": "code",
+    "artifact_ref": "app/lib/token_store.ts:1-30",
+    "note": "Client-side token storage helper — only exists because tokens live on the client (JWT, not sessions)"
+  },
+  {
+    "id": "l0000004",
+    "decision_id": "d1a2b3c4-0001-4000-a000-000000000001",
+    "artifact_type": "spec",
+    "artifact_ref": "notion-spec:Authentication#jwt-flow",
+    "note": "Spec section describing the JWT auth flow, drafted after the Jan 14 decision"
+  },
+  {
+    "id": "l0000005",
+    "decision_id": "d1a2b3c4-0002-4000-a000-000000000002",
+    "artifact_type": "code",
+    "artifact_ref": "api/db.py:1-45",
+    "note": "PostgreSQL connection pool — library choice (asyncpg) and connection config driven by Postgres decision"
+  },
+  {
+    "id": "l0000006",
+    "decision_id": "d1a2b3c4-0002-4000-a000-000000000002",
+    "artifact_type": "code",
+    "artifact_ref": "api/models/order.py:1-60",
+    "note": "SQLAlchemy model with relational FK to users — structure only makes sense in a relational DB"
+  },
+  {
+    "id": "l0000007",
+    "decision_id": "d1a2b3c4-0003-4000-a000-000000000003",
+    "artifact_type": "code",
+    "artifact_ref": "app/checkout/page.tsx:1-120",
+    "note": "3-step checkout component — the step count (3) is hardcoded and traces to the Feb 28 decision"
+  },
+  {
+    "id": "l0000008",
+    "decision_id": "d1a2b3c4-0003-4000-a000-000000000003",
+    "artifact_type": "code",
+    "artifact_ref": "app/checkout/steps/CartReview.tsx",
+    "note": "Step 1 of 3"
+  },
+  {
+    "id": "l0000009",
+    "decision_id": "d1a2b3c4-0003-4000-a000-000000000003",
+    "artifact_type": "code",
+    "artifact_ref": "app/checkout/steps/DeliveryDetails.tsx",
+    "note": "Step 2 of 3 — delivery and payment are combined because of the 3-step decision"
+  },
+  {
+    "id": "l0000010",
+    "decision_id": "d1a2b3c4-0003-4000-a000-000000000003",
+    "artifact_type": "code",
+    "artifact_ref": "app/checkout/steps/Payment.tsx",
+    "note": "Step 3 of 3"
+  },
+  {
+    "id": "l0000011",
+    "decision_id": "d1a2b3c4-0004-4000-a000-000000000004",
+    "artifact_type": "code",
+    "artifact_ref": "api/models/order.py:12-18",
+    "note": "user_id FK only — no name/email/address fields. PII is explicitly absent due to the Mar 15 decision"
+  },
+  {
+    "id": "l0000012",
+    "decision_id": "d1a2b3c4-0004-4000-a000-000000000004",
+    "artifact_type": "code",
+    "artifact_ref": "api/models/user.py:1-55",
+    "note": "All PII lives here, not in order model — architecture enforced by the compliance decision"
+  },
+  {
+    "id": "l0000013",
+    "decision_id": "d1a2b3c4-0005-4000-a000-000000000005",
+    "artifact_type": "code",
+    "artifact_ref": "vercel.json:1-20",
+    "note": "Vercel deployment config — file only exists because of the Apr 2 deployment decision"
+  },
+  {
+    "id": "l0000014",
+    "decision_id": "d1a2b3c4-0006-4000-a000-000000000006",
+    "artifact_type": "code",
+    "artifact_ref": "api/utils/retry.py:1-55",
+    "note": "Exponential backoff + jitter implementation — entire module created after the Apr 20 decision"
+  },
+  {
+    "id": "l0000015",
+    "decision_id": "d1a2b3c4-0007-4000-a000-000000000007",
+    "artifact_type": "code",
+    "artifact_ref": "api/main.py:12-15",
+    "note": "Router mounted at /v1/ prefix — the URL path versioning strategy from the May 8 decision"
+  },
+  {
+    "id": "l0000016",
+    "decision_id": "d1a2b3c4-0007-4000-a000-000000000007",
+    "artifact_type": "spec",
+    "artifact_ref": "notion-spec:API Design#versioning",
+    "note": "Spec section on versioning strategy, explicitly rejecting header versioning"
+  },
+  {
+    "id": "l0000017",
+    "decision_id": "d1a2b3c4-0008-4000-a000-000000000008",
+    "artifact_type": "code",
+    "artifact_ref": "api/middleware/rate_limit.py:1-40",
+    "note": "Rate limiter — the 100 req/min constant comes directly from the May 22 decision"
+  },
+  {
+    "id": "l0000018",
+    "decision_id": "d1a2b3c4-0009-4000-a000-000000000009",
+    "artifact_type": "code",
+    "artifact_ref": "api/cache/rate_counter.py:1-30",
+    "note": "Redis-backed rate limit counter — scoped use of Redis as decided Jun 10"
+  },
+  {
+    "id": "l0000019",
+    "decision_id": "d1a2b3c4-0009-4000-a000-000000000009",
+    "artifact_type": "code",
+    "artifact_ref": "api/cache/cart_session.py:1-45",
+    "note": "Cart session cache in Redis — ephemeral only, no durable data"
+  },
+  {
+    "id": "l0000020",
+    "decision_id": "d1a2b3c4-0010-4000-a000-000000000010",
+    "artifact_type": "code",
+    "artifact_ref": "package.json:1-5",
+    "note": "Monorepo root package.json with workspaces — the entire repo structure traces to the Jun 28 decision"
+  }
+]

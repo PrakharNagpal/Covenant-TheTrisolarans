@@ -1,0 +1,102 @@
+[
+  {
+    "id": "d1a2b3c4-0001-4000-a000-000000000001",
+    "summary": "Use JWT (JSON Web Tokens) for authentication",
+    "rationale": "We chose JWT because it is stateless — the server does not need to store session state, which makes horizontal scaling trivial. Mobile clients also benefit since tokens can be stored locally and sent with every request without server-side session lookup. Sessions were seriously considered but rejected because they require sticky sessions or a shared session store (Redis), adding operational complexity we didn't want at this stage.",
+    "alternatives_rejected": ["Server-side sessions with Redis", "OAuth2 alone (without JWT)", "Basic Auth"],
+    "participants": ["@alice", "@bob"],
+    "source": "slack",
+    "source_ref": "C04ABC123/1704153600.000100",
+    "created_at": "2026-01-14T10:32:00Z"
+  },
+  {
+    "id": "d1a2b3c4-0002-4000-a000-000000000002",
+    "summary": "Use PostgreSQL as the primary database over MongoDB",
+    "rationale": "Our data is highly relational — users, orders, payments, and products all have strong foreign-key relationships. PostgreSQL gives us ACID transactions, which are non-negotiable for payment records. MongoDB was appealing for its flexible schema but we decided schema flexibility was not worth losing transactional guarantees. We can always use JSONB columns in Postgres when we need flexibility.",
+    "alternatives_rejected": ["MongoDB", "MySQL", "DynamoDB"],
+    "participants": ["@priya", "@raj"],
+    "source": "slack",
+    "source_ref": "C04ABC123/1706914800.000200",
+    "created_at": "2026-02-03T09:00:00Z"
+  },
+  {
+    "id": "d1a2b3c4-0003-4000-a000-000000000003",
+    "summary": "Checkout flow will be exactly 3 steps: Cart Review, Delivery Details, Payment",
+    "rationale": "User research showed that more than 3 steps caused a measurable drop in completion rate. We mapped every possible input to one of three buckets. Splitting Delivery and Payment into separate steps (making it 4) was proposed but rejected — users trust a single form for contact + payment better than two separate pages for the same transaction.",
+    "alternatives_rejected": ["4-step flow (split delivery and payment)", "Single-page checkout", "2-step flow"],
+    "participants": ["@alice", "@design-lead"],
+    "source": "notion",
+    "source_ref": "https://notion.so/checkout-spec-v2",
+    "created_at": "2026-02-28T14:15:00Z"
+  },
+  {
+    "id": "d1a2b3c4-0004-4000-a000-000000000004",
+    "summary": "No personally identifiable information (PII) will be stored in the orders table",
+    "rationale": "Legal reviewed our data model and flagged that storing full name, email, and address in the orders table creates a single point of failure for PDPA compliance. We moved all PII to a separate users table with its own access controls and retention policy. The orders table stores only a user_id foreign key. This also simplifies our audit log — the orders table can be exported without redaction.",
+    "alternatives_rejected": ["Store PII in orders with column-level encryption", "Store PII in orders and rely on access controls"],
+    "participants": ["@priya", "@security-lead"],
+    "source": "slack",
+    "source_ref": "C04ABC123/1710504000.000400",
+    "created_at": "2026-03-15T11:00:00Z"
+  },
+  {
+    "id": "d1a2b3c4-0005-4000-a000-000000000005",
+    "summary": "Deploy to Vercel for the frontend and Railway for the backend API",
+    "rationale": "Vercel gives us zero-config Next.js deployments with edge CDN out of the box. Railway handles our FastAPI backend with automatic deploys from main. The cost at our current scale is negligible. AWS was discussed but the operational overhead of managing infrastructure is not worth it for a team our size. We can migrate later if needed.",
+    "alternatives_rejected": ["AWS (ECS + CloudFront)", "Fly.io", "Self-hosted on EC2"],
+    "participants": ["@bob"],
+    "source": "slack",
+    "source_ref": "C04ABC123/1712098800.000500",
+    "created_at": "2026-04-02T16:45:00Z"
+  },
+  {
+    "id": "d1a2b3c4-0006-4000-a000-000000000006",
+    "summary": "Use exponential backoff with jitter for all external API retry logic",
+    "rationale": "After a Stripe outage caused a thundering herd of retries that made the situation worse, we standardised on exponential backoff with full jitter (as described in the AWS architecture blog). Fixed intervals were rejected because they cause synchronized retry storms. Linear backoff was considered but provides less variance and can still overload a recovering service.",
+    "alternatives_rejected": ["Fixed interval retries", "Linear backoff", "No retry logic"],
+    "participants": ["@raj"],
+    "source": "github_pr",
+    "source_ref": "https://github.com/trisolarans/covenant-demo/pull/12",
+    "created_at": "2026-04-20T10:20:00Z"
+  },
+  {
+    "id": "d1a2b3c4-0007-4000-a000-000000000007",
+    "summary": "API versioning will use URL path prefixes (/v1/, /v2/) not headers",
+    "rationale": "Header-based versioning (Accept: application/vnd.api+json;version=2) is more RESTfully correct but extremely hard to debug and test. URL path versioning is explicit, cache-friendly, and immediately visible in logs. Every major consumer API we admire (Stripe, Twilio) uses URL versioning. Header versioning was proposed and rejected on developer experience grounds.",
+    "alternatives_rejected": ["Accept header versioning", "Query parameter versioning (?version=2)", "No versioning strategy"],
+    "participants": ["@priya"],
+    "source": "slack",
+    "source_ref": "C04ABC123/1715169600.000700",
+    "created_at": "2026-05-08T09:30:00Z"
+  },
+  {
+    "id": "d1a2b3c4-0008-4000-a000-000000000008",
+    "summary": "Rate limit all authenticated API endpoints at 100 requests per minute per user",
+    "rationale": "We analysed our p99 request patterns and determined that legitimate users never exceed 40 req/min even during peak usage. 100 req/min gives 2.5x headroom while still protecting against runaway clients and scrapers. A stricter 60 req/min was considered but rejected after one integration partner flagged it would block their sync job. Unlimited was never on the table.",
+    "alternatives_rejected": ["60 req/min", "200 req/min", "IP-based rate limiting only"],
+    "participants": ["@bob"],
+    "source": "slack",
+    "source_ref": "C04ABC123/1716566400.000800",
+    "created_at": "2026-05-22T14:00:00Z"
+  },
+  {
+    "id": "d1a2b3c4-0009-4000-a000-000000000009",
+    "summary": "Use Redis for caching session metadata and rate-limit counters only — not as a primary data store",
+    "rationale": "Even though we use JWT (stateless auth), we still need a fast store for rate-limit counters and ephemeral session metadata (e.g. shopping cart state before checkout). Redis is ideal for this. The decision is explicitly scoped: Redis is NOT a primary data store, all durable data goes to Postgres. This avoids the risk of treating Redis as a database and losing data on restart.",
+    "alternatives_rejected": ["Use Redis as primary cache for all reads", "In-memory store per process", "Postgres-only with no cache"],
+    "participants": ["@raj"],
+    "source": "slack",
+    "source_ref": "C04ABC123/1718625600.000900",
+    "created_at": "2026-06-10T11:15:00Z"
+  },
+  {
+    "id": "d1a2b3c4-0010-4000-a000-000000000010",
+    "summary": "Use a monorepo structure with a single Git repository for frontend, backend, and shared types",
+    "rationale": "Shared TypeScript types between our Next.js frontend and FastAPI backend (via openapi-typescript) require tight coordination. A monorepo makes type sharing, atomic cross-stack commits, and unified CI trivially easy. Polyrepo was considered and rejected because we estimated it would add 2–3 hours per week of cross-repo coordination overhead for a 3-person team. We'll revisit if the team grows past 8.",
+    "alternatives_rejected": ["Polyrepo (separate repos per service)", "Git submodules"],
+    "participants": ["@alice", "@bob"],
+    "source": "slack",
+    "source_ref": "C04ABC123/1719993600.001000",
+    "created_at": "2026-06-28T09:00:00Z"
+  }
+]

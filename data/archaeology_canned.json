@@ -1,0 +1,20 @@
+[
+  {
+    "id": "arch-001",
+    "question": "Why are we using JWT?",
+    "keywords": ["jwt", "auth", "authentication", "token", "session"],
+    "answer": "On January 14th, @alice raised the question of whether to use sessions or JWT for authentication. @bob proposed JWT on the grounds that it is stateless — the server does not need to store session state, which makes horizontal scaling straightforward and benefits mobile clients who can store the token locally.\n\nThe team explicitly considered server-side sessions with Redis but rejected them because they would require either sticky routing or a shared session store, adding operational complexity the team wasn't ready to take on at this stage.\n\nThat decision has held. The entire api/auth.js file and the auth_guard middleware exist as a direct result of that January conversation. Every request that hits the API is verified statelessly because @bob and @alice agreed on JWT that morning."
+  },
+  {
+    "id": "arch-002",
+    "question": "Why is checkout 3 steps?",
+    "keywords": ["checkout", "steps", "cart", "payment", "delivery", "flow", "3 step", "three step"],
+    "answer": "On February 28th, @alice and @design-lead finalised the checkout flow structure after reviewing user research. The research showed measurably higher abandonment rates when checkout had more than 3 steps.\n\nThe team mapped every required input — cart review, delivery address, and payment — to exactly three screens. A 4-step variant that split delivery address and payment onto separate pages was proposed and tested in a prototype, but users in the research cohort trusted a single combined delivery-and-payment page more than two separate forms for the same transaction.\n\nAs a result, app/checkout/page.tsx hardcodes 3 steps — CartReview, DeliveryDetails, and Payment. If you're thinking about adding a fourth step, that change should be discussed with @design-lead and the original rationale re-evaluated against current data."
+  },
+  {
+    "id": "arch-003",
+    "question": "Why do we use Postgres?",
+    "keywords": ["postgres", "postgresql", "mongodb", "mongo", "database", "db", "mysql"],
+    "answer": "On February 3rd, @priya and @raj chose PostgreSQL after a structured comparison with MongoDB. The core reason was that the data model is highly relational: users, orders, payments, and products all have strong foreign-key relationships that map naturally to a relational schema.\n\nMore importantly, ACID transactions were considered non-negotiable for payment records. PostgreSQL provides these guarantees at the row and transaction level. MongoDB's flexible schema was acknowledged as appealing, but the team concluded that schema flexibility was not worth sacrificing transactional integrity for financial data.\n\nThe decision also noted that JSONB columns in Postgres provide flexibility when truly needed, removing the main practical argument for MongoDB. The entire api/models/ directory and the asyncpg connection pool in api/db.py reflect this choice."
+  }
+]
