@@ -5,12 +5,8 @@ import os
 from pathlib import Path
 
 from dotenv import load_dotenv
-from openai import AsyncOpenAI
-from supabase import create_client
 
 load_dotenv()
-
-client = AsyncOpenAI()
 
 ARCHAEOLOGY_PROMPT = """You are Covenant, the institutional memory for a software team.
 A team member is asking why their codebase looks the way it does.
@@ -177,6 +173,10 @@ async def answer_archaeology(question: str) -> str:
         return canned
 
     try:
+        from openai import AsyncOpenAI
+        from supabase import create_client
+
+        client = AsyncOpenAI()
         supabase = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_SERVICE_KEY"))
 
         embedding_resp = await client.embeddings.create(

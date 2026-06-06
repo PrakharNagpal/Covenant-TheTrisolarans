@@ -83,6 +83,28 @@ function asStringArray(value: unknown): string[] {
   return [];
 }
 
+function normalizeSource(value: unknown): string {
+  const source = asString(value, "Unknown").toLowerCase();
+
+  if (source.includes("github")) {
+    return "github";
+  }
+
+  if (source.includes("slack")) {
+    return "slack";
+  }
+
+  if (source.includes("notion")) {
+    return "notion";
+  }
+
+  if (source.includes("linear")) {
+    return "linear";
+  }
+
+  return source;
+}
+
 function formatDate(value: unknown): string {
   if (typeof value !== "string" || value.length === 0) {
     return "Date not recorded";
@@ -110,7 +132,7 @@ function normalizeDecision(rawValue: unknown): Decision {
     summary: asString(raw.summary, "Untitled decision"),
     date: asString(raw.date) || formatDate(raw.created_at),
     participants: participants.length > 0 ? participants : ["Unknown"],
-    source: asString(raw.source, "Unknown"),
+    source: normalizeSource(raw.source),
     rationale: asString(raw.rationale) || undefined,
     alternatives_rejected: asStringArray(raw.alternatives_rejected),
   };
@@ -131,7 +153,7 @@ function normalizeLineage(rawValue: unknown): LineageLink {
     type,
     label,
     target,
-    source: asString(raw.source, "Supabase"),
+    source: normalizeSource(raw.source),
     note: asString(raw.note) || undefined,
   };
 }
@@ -149,7 +171,7 @@ function normalizeAlert(rawValue: unknown): Alert {
     id: asString(raw.id, `alert-${asString(raw.created_at, Date.now().toString())}`),
     decision_id: asString(raw.decision_id),
     severity: asString(raw.severity, "structural"),
-    source: asString(raw.source) || asString(raw.source_type, "Unknown"),
+    source: normalizeSource(raw.source || raw.source_type),
     source_ref: asString(raw.source_ref),
     message,
     status: asString(raw.status, "open"),

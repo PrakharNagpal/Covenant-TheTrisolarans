@@ -1,16 +1,75 @@
-# Lane: P2 backend
 import asyncio
 import os
+from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Callable
+import json
 
-from supabase import Client, create_client
+_client: Any | None = None
+_demo_decisions: list[dict] | None = None
+_demo_lineage: list[dict] | None = None
+_demo_alerts: list[dict] = []
 
-_client: Client | None = None
+DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 
 
-def get_client() -> Client:
+def _is_demo_mode() -> bool:
+    return os.getenv("MODE") == "DEMO" or not (
+        os.getenv("SUPABASE_URL") and os.getenv("SUPABASE_SERVICE_KEY")
+    )
+
+
+def _load_json(filename: str) -> list[dict]:
+    path = DATA_DIR / filename
+    return json.loads(path.read_text())
+
+
+def _load_demo_decisions() -> list[dict]:
+    global _demo_decisions
+    if _demo_decisions is None:
+        _demo_decisions = _load_json("decisions.json")
+    return _demo_decisions
+
+
+def _load_demo_lineage() -> list[dict]:
+    global _demo_lineage
+    if _demo_lineage is None:
+        _demo_lineage = _load_json("lineage_links.json")
+    return _demo_lineage
+
+
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _demo_alert_from_contradiction(
+    contradiction: dict,
+    source_ref: str,
+    source: str,
+) -> dict:
+    decision = contradiction.get("decision") or {}
+    return {
+        "id": f"demo-alert-{len(_demo_alerts) + 1}",
+        "decision_id": decision.get("id") or contradiction.get("decision_id"),
+        "severity": contradiction.get("severity", "structural"),
+        "source": source,
+        "source_ref": source_ref,
+        "message": contradiction.get("message")
+        or contradiction.get("explanation")
+        or "A contradiction was detected.",
+        "status": "open",
+        "explanation": contradiction.get("explanation"),
+        "confidence": contradiction.get("confidence"),
+        "created_at": _now_iso(),
+        "decision": decision or None,
+    }
+
+
+def get_client() -> Any:
     global _client
     if _client is None:
+        from supabase import create_client
+
         url = os.getenv("SUPABASE_URL")
         key = os.getenv("SUPABASE_SERVICE_KEY")
         if not url or not key:
@@ -24,15 +83,35 @@ async def _run_sync(fn: Callable[[], Any]) -> Any:
 
 
 async def get_all_decisions() -> list[dict]:
+    if _is_demo_mode():
+        return _load_demo_decisions()
+
     result = await _run_sync(lambda: get_client().table("decisions").select("*").execute())
     return result.data or []
 
 
 async def upsert_decision(decision: dict):
+    if _is_demo_mode():
+        decisions = _load_demo_decisions()
+        decision_id = decision.get("id")
+        for index, existing in enumerate(decisions):
+            if existing.get("id") == decision_id:
+                decisions[index] = {**existing, **decision}
+                return
+        decisions.append(decision)
+        return
+
     await _run_sync(lambda: get_client().table("decisions").upsert(decision).execute())
 
 
 async def insert_alert(contradiction: dict, source_ref: str, source: str):
+    if _is_demo_mode():
+        _demo_alerts.insert(
+            0,
+            _demo_alert_from_contradiction(contradiction, source_ref, source),
+        )
+        return
+
     decision = contradiction.get("decision") or {}
     message = contradiction.get("message") or contradiction.get("explanation")
     contradiction_explanation = (
@@ -54,6 +133,21 @@ async def insert_alert(contradiction: dict, source_ref: str, source: str):
 
 
 async def get_alerts(since: str | None = None) -> list[dict]:
+    if _is_demo_mode():
+        if not since:
+            return _demo_alerts
+
+        try:
+            seen_at = datetime.fromisoformat(since.replace("Z", "+00:00"))
+        except ValueError:
+            return _demo_alerts
+
+        return [
+            alert
+            for alert in _demo_alerts
+            if datetime.fromisoformat(alert["created_at"]) >= seen_at
+        ]
+
     def query():
         builder = get_client().table("alerts").select("*").order("created_at", desc=True)
         if since:
@@ -65,6 +159,16 @@ async def get_alerts(since: str | None = None) -> list[dict]:
 
 
 async def get_decision(decision_id: str) -> dict | None:
+    if _is_demo_mode():
+        return next(
+            (
+                decision
+                for decision in _load_demo_decisions()
+                if decision.get("id") == decision_id
+            ),
+            None,
+        )
+
     result = await _run_sync(
         lambda: get_client()
         .table("decisions")
@@ -77,6 +181,13 @@ async def get_decision(decision_id: str) -> dict | None:
 
 
 async def get_lineage(decision_id: str) -> list[dict]:
+    if _is_demo_mode():
+        return [
+            link
+            for link in _load_demo_lineage()
+            if link.get("decision_id") == decision_id
+        ]
+
     result = await _run_sync(
         lambda: get_client()
         .table("lineage_links")

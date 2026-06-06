@@ -133,12 +133,26 @@ select {
   font-family: inherit;
 }
 
+:where(button, a, input, select, textarea, [role="button"]) {
+  transition: all 0.15s ease;
+}
+
 button {
   cursor: pointer;
 }
 
 button:disabled {
   cursor: not-allowed;
+}
+
+button:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+input:focus,
+textarea:focus,
+select:focus {
+  box-shadow: 0 0 0 3px rgba(123,108,246,0.20);
 }
 
 @keyframes alert-in {
@@ -250,10 +264,10 @@ button:disabled {
 
 @keyframes orbit {
   from {
-    transform: rotate(0deg) translateX(90px) rotate(0deg);
+    transform: rotate(0deg) translateX(70px) rotate(0deg);
   }
   to {
-    transform: rotate(360deg) translateX(90px) rotate(-360deg);
+    transform: rotate(360deg) translateX(70px) rotate(-360deg);
   }
 }
 

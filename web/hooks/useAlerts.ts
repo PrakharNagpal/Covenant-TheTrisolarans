@@ -1,60 +1,77 @@
-// Lane: P3 frontend
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getAlerts, type Alert } from "@/lib/api";
+import { mockAlerts } from "@/lib/mock";
+
+const USE_MOCK = process.env.NEXT_PUBLIC_USE_MOCK === "1";
 
 export function useAlerts() {
-  const [latestAlert, setLatestAlert] = useState<Alert | null>(null);
   const [alerts, setAlerts] = useState<Alert[]>([]);
-  const sinceRef = useRef<string | null>(null);
-  const seenIdsRef = useRef<Set<string>>(new Set());
+  const lastSeenRef = useRef<string | null>(null);
+  const dismissedRef = useRef<Set<string>>(new Set());
 
-  const dismissLatest = useCallback(() => {
-    setLatestAlert(null);
+  const dismiss = useCallback((id: string) => {
+    dismissedRef.current.add(id);
+    setAlerts((current) => current.filter((alert) => alert.id !== id));
   }, []);
-
-  const replayLatestAlert = useCallback(() => {
-    setLatestAlert((current) => current ?? alerts[0] ?? null);
-  }, [alerts]);
 
   useEffect(() => {
     let cancelled = false;
+    let mockTimer: number | null = null;
 
     async function pollAlerts() {
       try {
-        const alerts = await getAlerts(sinceRef.current);
-        console.log("[Covenant] useAlerts poll", alerts);
+        const nextAlerts = await getAlerts(lastSeenRef.current);
+        if (cancelled) {
+          return;
+        }
 
-        if (alerts.length > 0) {
-          const newest = alerts[0];
-          sinceRef.current = newest.created_at ?? new Date().toISOString();
-          if (!cancelled) {
-            setAlerts((current) => {
-              const known = new Set(current.map((alert) => alert.id));
-              const fresh = alerts.filter((alert) => !known.has(alert.id));
-              return [...fresh, ...current].slice(0, 12);
-            });
+        const visibleAlerts = nextAlerts.filter(
+          (alert) => !dismissedRef.current.has(alert.id),
+        );
 
-            if (!seenIdsRef.current.has(newest.id)) {
-              seenIdsRef.current.add(newest.id);
-              setLatestAlert(newest);
-            }
-          }
+        if (visibleAlerts.length > 0) {
+          lastSeenRef.current =
+            visibleAlerts[0].created_at ?? new Date().toISOString();
+          setAlerts((current) => {
+            const known = new Set(current.map((alert) => alert.id));
+            const fresh = visibleAlerts.filter((alert) => !known.has(alert.id));
+            return [...fresh, ...current].slice(0, 12);
+          });
         }
       } catch (error) {
         console.error("[Covenant] useAlerts failed", error);
       }
     }
 
-    pollAlerts();
-    const interval = window.setInterval(pollAlerts, 3000);
+    if (USE_MOCK) {
+      setAlerts([]);
+      mockTimer = window.setTimeout(() => {
+        if (!cancelled) {
+          const alert = mockAlerts[0];
+          if (alert && !dismissedRef.current.has(alert.id)) {
+            setAlerts([alert]);
+          }
+        }
+      }, 5000);
+    } else {
+      pollAlerts();
+      const interval = window.setInterval(pollAlerts, 3000);
+
+      return () => {
+        cancelled = true;
+        window.clearInterval(interval);
+      };
+    }
 
     return () => {
       cancelled = true;
-      window.clearInterval(interval);
+      if (mockTimer) {
+        window.clearTimeout(mockTimer);
+      }
     };
   }, []);
 
-  return { alerts, latestAlert, dismissLatest, replayLatestAlert };
+  return { alerts, dismiss };
 }

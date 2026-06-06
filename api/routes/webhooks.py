@@ -97,10 +97,22 @@ async def process_push(payload: dict):
 async def process_slack_message(event: dict):
     from agent.classifier import classify_decision
     from agent.contradiction import find_contradictions
+    import uuid
 
     text = event.get("text", "")
     classification = await classify_decision(text)
     if classification["label"] == "DECISION":
+        new_decision = {
+            "id": str(uuid.uuid4()),
+            "summary": classification.get("extracted_choice") or text[:200],
+            "rationale": text,
+            "participants": [event.get("user", "unknown")],
+            "source": "slack",
+            "source_ref": f"{event.get('channel', '')}/{event.get('ts', '')}",
+            "created_at": datetime.utcnow().isoformat() + "Z",
+        }
+        await db.upsert_decision(new_decision)
+
         decisions = await db.get_all_decisions()
         contradictions = await find_contradictions(text, decisions)
         if contradictions:

@@ -85,27 +85,27 @@ export function LiveDemo() {
   return (
     <section
       data-testid="live-demo"
-      className="relative overflow-hidden bg-[#0D0D18] px-5 py-20 text-white sm:px-8"
+      className="relative overflow-hidden bg-[#0D0D18] px-5 py-14 text-white sm:px-8"
       style={{
         backgroundImage:
           "radial-gradient(circle, rgba(255,255,255,0.06) 1px, transparent 1px)",
         backgroundSize: "28px 28px",
       }}
     >
-      <div className="mx-auto flex max-w-6xl flex-col items-center gap-10">
+      <div className="mx-auto flex max-w-6xl flex-col items-center gap-7">
         <header className="max-w-3xl text-center">
           <p className="text-[11px] font-extrabold uppercase tracking-[0.2em] text-[var(--violet)]">
             Interactive Demo
           </p>
-          <h2 className="mt-3 text-4xl font-extrabold tracking-[-0.02em] text-white">
+          <h2 className="mt-2 text-4xl font-extrabold tracking-[-0.02em] text-white">
             Watch Covenant catch a broken promise
           </h2>
-          <p className="mx-auto mt-4 max-w-xl text-base leading-7 text-white/[0.27]">
+          <p className="mx-auto mt-3 max-w-xl text-sm leading-6 text-white/[0.27]">
             A commit lands, Covenant traces it against team memory, and the PR gets a promise check.
           </p>
         </header>
 
-        <div className="w-full overflow-x-auto pb-2">
+        <div className="w-full overflow-x-auto pb-1">
           <div className="mx-auto flex w-max min-w-full items-center justify-center px-1">
             {pipelineSteps.map((step, index) => {
               const state = stateForStep(index, activeStep, done);
@@ -122,7 +122,7 @@ export function LiveDemo() {
           </div>
         </div>
 
-        <div className="flex min-h-12 items-center justify-center gap-3">
+        <div className="flex min-h-10 items-center justify-center gap-3">
           {!running && !done ? (
             <Button onClick={runPipeline} size="lg" variant="primary">
               ▶ Push commit & watch
@@ -177,7 +177,7 @@ function PipelineNode({
 
   return (
     <div
-      className="flex min-w-[100px] flex-col items-center gap-2 border px-4 py-3.5 text-center"
+      className="flex min-w-[96px] flex-col items-center gap-1.5 border px-3.5 py-3 text-center"
       data-testid={`pipeline-node-${step.id}`}
       style={{
         background: isActive
@@ -197,7 +197,7 @@ function PipelineNode({
       }}
     >
       <span
-        className="flex h-9 w-9 items-center justify-center text-xl"
+        className="flex h-8 w-8 items-center justify-center text-lg"
         style={{
           filter: state === "idle" ? "grayscale(1)" : "none",
           opacity: state === "idle" ? 0.38 : 1,
@@ -261,13 +261,13 @@ function PrCommentCard() {
         <SevBadge severity="structural" />
       </header>
 
-      <div className="flex flex-col gap-4 p-5">
+      <div className="flex flex-col gap-3 p-4">
         <p className="text-[13px] font-extrabold text-[var(--ink)]">
           ⚠️ This change may break a promise your team made.
         </p>
 
         <div
-          className="border-l-[3px] bg-[#F8F8FC] p-4"
+          className="border-l-[3px] bg-[#F8F8FC] p-3.5"
           style={{
             borderColor: tokens.colors.violet,
             borderRadius: "10px",
@@ -276,17 +276,17 @@ function PrCommentCard() {
           <p className="text-[11px] font-extrabold text-[var(--violet)]">
             Past decision — Jan 14, 2025
           </p>
-          <p className="mt-2 text-[13px] font-semibold leading-6 text-[var(--ink-2)]">
+          <p className="mt-1.5 text-[13px] font-semibold leading-6 text-[var(--ink-2)]">
             Use JWT for all auth. Stateless, works for mobile, no shared session store.
           </p>
-          <div className="mt-3 flex flex-wrap gap-2">
+          <div className="mt-2 flex flex-wrap gap-2">
             <Pill username="@alice" />
             <Pill username="@bob" />
           </div>
         </div>
 
         <div
-          className="border-l-[3px] bg-[#FFF5F5] p-4 text-[13px] font-semibold leading-6 text-[var(--ink-2)]"
+          className="border-l-[3px] bg-[#FFF5F5] p-3.5 text-[13px] font-semibold leading-6 text-[var(--ink-2)]"
           style={{
             borderColor: "#EF4444",
             borderRadius: "10px",
@@ -296,7 +296,7 @@ function PrCommentCard() {
           Confidence: 96%
         </div>
 
-        <div className="flex flex-wrap gap-3 pt-1">
+        <div className="flex flex-wrap gap-2 pt-0.5">
           <Button size="sm" variant="coral">
             👍 Intentional override
           </Button>

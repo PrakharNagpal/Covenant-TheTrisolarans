@@ -21,7 +21,7 @@ export function SkeletonCard() {
           backgroundSize: "600px 100%",
         }}
       />
-      <div className="flex flex-col gap-4 px-[18px] py-4">
+      <div className="flex flex-col gap-3 px-4 py-3.5">
         <div className="flex items-start justify-between gap-3">
           <div className="flex flex-1 flex-col gap-2">
             <Skeleton h={16} radius="full" />

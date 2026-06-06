@@ -76,12 +76,12 @@ export function Hero() {
   const typedText = useTypewriter();
 
   return (
-    <section className="relative flex min-h-screen overflow-hidden bg-[var(--hero-bg)] text-white">
+    <section className="relative flex min-h-[680px] overflow-hidden bg-[var(--hero-bg)] text-white md:min-h-[720px]">
       <HeroBackground />
 
-      <div className="relative z-10 flex min-h-screen w-full flex-col">
+      <div className="relative z-10 flex min-h-[680px] w-full flex-col md:min-h-[720px]">
         <nav
-          className="relative border-b border-[rgba(255,255,255,0.06)] px-5 py-4 sm:px-8"
+          className="relative border-b border-[rgba(255,255,255,0.06)] px-5 py-3 sm:px-8"
           style={fadeStyle(0)}
         >
           <div className="mx-auto grid max-w-7xl grid-cols-[1fr_auto] items-center gap-4 md:grid-cols-[1fr_auto_1fr]">
@@ -118,7 +118,7 @@ export function Hero() {
           </div>
         </nav>
 
-        <div className="flex flex-1 items-center justify-center px-5 py-10 text-center sm:px-8">
+        <div className="flex flex-1 items-center justify-center px-5 py-8 text-center sm:px-8">
           <div className="w-full max-w-[1360px]">
             <div
               className="inline-flex items-center gap-2 rounded-[var(--radius-full)] border border-[rgba(255,255,255,0.12)] bg-[rgba(255,255,255,0.06)] px-4 py-2"
@@ -131,7 +131,7 @@ export function Hero() {
             </div>
 
             <h1
-              className="mx-auto mt-8 max-w-[1360px] text-[clamp(36px,6vw,72px)] font-black leading-[1.08] tracking-[-2px] text-white"
+              className="mx-auto mt-6 max-w-[1360px] text-[clamp(36px,6vw,72px)] font-black leading-[1.08] tracking-[-2px] text-white"
               style={fadeStyle(2)}
             >
               Every team{" "}
@@ -160,7 +160,7 @@ export function Hero() {
             </h1>
 
             <p
-              className="mx-auto mt-6 max-w-[480px] text-[17px] font-normal leading-[1.7] text-white/[0.35]"
+              className="mx-auto mt-4 max-w-[480px] text-[17px] font-normal leading-[1.65] text-white/[0.35]"
               style={fadeStyle(3)}
             >
               Covenant watches your Slack, Notion, GitHub and Linear. The moment
@@ -168,7 +168,7 @@ export function Hero() {
             </p>
 
             <div
-              className="mt-8 flex flex-wrap items-center justify-center gap-3"
+              className="mt-6 flex flex-wrap items-center justify-center gap-3"
               style={fadeStyle(4)}
             >
               <Button
@@ -185,25 +185,25 @@ export function Hero() {
             </div>
 
             <div
-              className="relative mx-auto mt-14 h-[200px] w-[200px]"
+              className="relative mx-auto mt-9 h-[160px] w-[160px]"
               style={fadeStyle(5)}
             >
-              <div className="absolute left-1/2 top-1/2 z-10 flex h-16 w-16 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-[var(--radius-md)] bg-[linear-gradient(135deg,#7B6CF6,#00C896)] text-3xl shadow-[var(--shadow-violet)] [animation:glow_2.4s_ease-in-out_infinite]">
+              <div className="absolute left-1/2 top-1/2 z-10 flex h-14 w-14 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-[var(--radius-md)] bg-[linear-gradient(135deg,#7B6CF6,#00C896)] text-2xl shadow-[var(--shadow-violet)] [animation:glow_2.4s_ease-in-out_infinite]">
                 <span aria-hidden="true">🛡️</span>
               </div>
 
               {orbitItems.map((item) => (
                 <div
                   aria-label={item.label}
-                  className="absolute flex h-[42px] w-[42px] items-center justify-center rounded-[var(--radius-md)] border text-xl shadow-[0_10px_28px_rgba(0,0,0,0.28)]"
+                  className="absolute flex h-9 w-9 items-center justify-center rounded-[var(--radius-md)] border text-lg shadow-[0_10px_28px_rgba(0,0,0,0.28)]"
                   key={item.label}
                   style={{
                     animation: "orbit 7.5s linear infinite",
                     animationDelay: item.delay,
                     background: item.color,
                     borderColor: "rgba(255,255,255,0.18)",
-                    left: "calc(50% - 21px)",
-                    top: "calc(50% - 21px)",
+                    left: "calc(50% - 18px)",
+                    top: "calc(50% - 18px)",
                   }}
                   title={item.label}
                 >
@@ -213,7 +213,7 @@ export function Hero() {
             </div>
 
             <p
-              className="mt-5 text-sm font-semibold tracking-[0.16em] text-white/[0.14]"
+              className="mt-3 text-sm font-semibold tracking-[0.16em] text-white/[0.14]"
               style={fadeStyle(6)}
             >
               Slack · Notion · GitHub · Linear
