@@ -58,8 +58,7 @@ def _demo_alert_from_contradiction(
         or contradiction.get("explanation")
         or "A contradiction was detected.",
         "status": "open",
-        "explanation": contradiction.get("explanation"),
-        "confidence": contradiction.get("confidence"),
+        "contradiction_explanation": contradiction.get("explanation"),
         "created_at": _now_iso(),
         "decision": decision or None,
     }
