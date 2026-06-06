@@ -141,6 +141,7 @@ function normalizeAlert(rawValue: unknown): Alert {
   const decisionRaw = raw.decision ? normalizeDecision(raw.decision) : undefined;
   const message =
     asString(raw.message) ||
+    asString(raw.contradiction_explanation) ||
     asString(raw.explanation) ||
     "A contradiction was detected.";
 

@@ -34,9 +34,7 @@ CREATE TABLE IF NOT EXISTS alerts (
   source_ref  text,
   message     text,
   status      text DEFAULT 'open',
-  explanation text,
-  confidence  float,
-  source_type text,
+  contradiction_explanation text,
   created_at  timestamptz DEFAULT now()
 );
 
@@ -83,15 +81,35 @@ ALTER TABLE alerts ADD COLUMN IF NOT EXISTS source text;
 ALTER TABLE alerts ADD COLUMN IF NOT EXISTS source_ref text;
 ALTER TABLE alerts ADD COLUMN IF NOT EXISTS message text;
 ALTER TABLE alerts ADD COLUMN IF NOT EXISTS status text DEFAULT 'open';
-ALTER TABLE alerts ADD COLUMN IF NOT EXISTS explanation text;
-ALTER TABLE alerts ADD COLUMN IF NOT EXISTS confidence float;
-ALTER TABLE alerts ADD COLUMN IF NOT EXISTS source_type text;
+ALTER TABLE alerts ADD COLUMN IF NOT EXISTS contradiction_explanation text;
+
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM information_schema.columns
+    WHERE table_name = 'alerts'
+      AND column_name = 'explanation'
+  ) THEN
+    UPDATE alerts
+    SET
+      message = COALESCE(message, explanation),
+      contradiction_explanation = COALESCE(contradiction_explanation, explanation);
+  END IF;
+
+  IF EXISTS (
+    SELECT 1
+    FROM information_schema.columns
+    WHERE table_name = 'alerts'
+      AND column_name = 'source_type'
+  ) THEN
+    UPDATE alerts
+    SET source = COALESCE(source, source_type);
+  END IF;
+END $$;
 
 UPDATE alerts
-SET
-  source = COALESCE(source, source_type),
-  message = COALESCE(message, explanation),
-  status = COALESCE(status, 'open');
+SET status = COALESCE(status, 'open');
 
 -- pgvector similarity search function
 CREATE OR REPLACE FUNCTION match_decisions(

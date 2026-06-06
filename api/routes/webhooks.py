@@ -67,7 +67,7 @@ def format_pr_comment(contradiction: dict, sha: str, diff: str = "") -> str:
 **What this commit does:**
 {diff_summary}
 **Why I flagged it ({contradiction.get("severity", "unknown")}):**
-{contradiction.get("explanation", "")}
+{contradiction.get("explanation_detail") or contradiction.get("contradiction_explanation") or contradiction.get("explanation", "")}
 ---
 *Is this intentional? 👍 to confirm (Covenant updates its priors), 👎 to flag for review.*
 [View in Covenant →]({COVENANT_URL}/decisions/{d.get("id", "")})"""
