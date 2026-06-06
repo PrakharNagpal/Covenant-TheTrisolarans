@@ -41,3 +41,7 @@ Thumbs.db
 *.log
 *.mp4
 covenant-backup-demo.mp4
+
+# Planning docs
+*.md
+*.html
