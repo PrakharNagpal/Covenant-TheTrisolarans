@@ -1,3 +1,4 @@
+-- Lane: P2 backend
 -- Run this in the Supabase SQL editor (enable pgvector extension first)
 -- Dashboard → Database → Extensions → enable "vector"
 
@@ -9,8 +10,9 @@ CREATE TABLE IF NOT EXISTS decisions (
   summary     text NOT NULL,
   rationale   text,
   participants text[],
-  alternatives_rejected text,
+  alternatives_rejected jsonb DEFAULT '[]'::jsonb,
   source      text,
+  source_ref  text,
   embedding   vector(1536),
   created_at  timestamptz DEFAULT now()
 );
@@ -19,7 +21,7 @@ CREATE TABLE IF NOT EXISTS lineage_links (
   id          uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
   decision_id uuid REFERENCES decisions(id) ON DELETE CASCADE,
   artifact_type text,    -- e.g. "file", "pr", "issue"
-  file_path   text,
+  artifact_ref text,
   note        text,
   created_at  timestamptz DEFAULT now()
 );
@@ -28,12 +30,68 @@ CREATE TABLE IF NOT EXISTS alerts (
   id          uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
   decision_id uuid REFERENCES decisions(id) ON DELETE SET NULL,
   severity    text,
+  source      text,
+  source_ref  text,
+  message     text,
+  status      text DEFAULT 'open',
   explanation text,
   confidence  float,
-  source_ref  text,
   source_type text,
   created_at  timestamptz DEFAULT now()
 );
+
+-- Compatibility columns for projects that already ran an older copy of this file.
+ALTER TABLE decisions ADD COLUMN IF NOT EXISTS source_ref text;
+ALTER TABLE decisions ADD COLUMN IF NOT EXISTS embedding vector(1536);
+ALTER TABLE decisions ALTER COLUMN alternatives_rejected DROP DEFAULT;
+
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM information_schema.columns
+    WHERE table_name = 'decisions'
+      AND column_name = 'alternatives_rejected'
+      AND data_type <> 'jsonb'
+  ) THEN
+    ALTER TABLE decisions
+      ALTER COLUMN alternatives_rejected TYPE jsonb
+      USING COALESCE(to_jsonb(alternatives_rejected), '[]'::jsonb);
+  END IF;
+END $$;
+
+ALTER TABLE decisions ALTER COLUMN alternatives_rejected SET DEFAULT '[]'::jsonb;
+
+ALTER TABLE lineage_links ADD COLUMN IF NOT EXISTS artifact_ref text;
+ALTER TABLE lineage_links ADD COLUMN IF NOT EXISTS note text;
+
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM information_schema.columns
+    WHERE table_name = 'lineage_links'
+      AND column_name = 'file_path'
+  ) THEN
+    UPDATE lineage_links
+    SET artifact_ref = file_path
+    WHERE artifact_ref IS NULL AND file_path IS NOT NULL;
+  END IF;
+END $$;
+
+ALTER TABLE alerts ADD COLUMN IF NOT EXISTS source text;
+ALTER TABLE alerts ADD COLUMN IF NOT EXISTS source_ref text;
+ALTER TABLE alerts ADD COLUMN IF NOT EXISTS message text;
+ALTER TABLE alerts ADD COLUMN IF NOT EXISTS status text DEFAULT 'open';
+ALTER TABLE alerts ADD COLUMN IF NOT EXISTS explanation text;
+ALTER TABLE alerts ADD COLUMN IF NOT EXISTS confidence float;
+ALTER TABLE alerts ADD COLUMN IF NOT EXISTS source_type text;
+
+UPDATE alerts
+SET
+  source = COALESCE(source, source_type),
+  message = COALESCE(message, explanation),
+  status = COALESCE(status, 'open');
 
 -- pgvector similarity search function
 CREATE OR REPLACE FUNCTION match_decisions(

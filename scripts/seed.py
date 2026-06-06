@@ -59,6 +59,7 @@ async def main():
             "decision_id": link["decision_id"],
             "artifact_type": link["artifact_type"],
             "artifact_ref": link["artifact_ref"],
+            "note": link.get("note"),
         }
         for link in lineage_links
     ]

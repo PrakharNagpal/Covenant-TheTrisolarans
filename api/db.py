@@ -34,13 +34,17 @@ async def upsert_decision(decision: dict):
 
 async def insert_alert(contradiction: dict, source_ref: str, source: str):
     decision = contradiction.get("decision") or {}
+    message = contradiction.get("message") or contradiction.get("explanation")
     alert = {
         "decision_id": decision.get("id") or contradiction.get("decision_id"),
         "severity": contradiction.get("severity"),
         "source": source,
         "source_ref": source_ref,
-        "message": contradiction.get("message") or contradiction.get("explanation"),
+        "message": message,
         "status": "open",
+        "explanation": contradiction.get("explanation"),
+        "confidence": contradiction.get("confidence"),
+        "source_type": source,
     }
     await _run_sync(lambda: get_client().table("alerts").insert(alert).execute())
 

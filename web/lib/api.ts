@@ -118,7 +118,10 @@ function normalizeDecision(rawValue: unknown): Decision {
 
 function normalizeLineage(rawValue: unknown): LineageLink {
   const raw = asRecord(rawValue);
-  const target = asString(raw.target) || asString(raw.file_path, "No ref");
+  const target =
+    asString(raw.target) ||
+    asString(raw.artifact_ref) ||
+    asString(raw.file_path, "No ref");
   const type = asString(raw.type) || asString(raw.artifact_type, "Artifact");
   const label = asString(raw.label) || target;
 
