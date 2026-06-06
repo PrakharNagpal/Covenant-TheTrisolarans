@@ -42,9 +42,7 @@ async def insert_alert(contradiction: dict, source_ref: str, source: str):
         "source_ref": source_ref,
         "message": message,
         "status": "open",
-        "explanation": contradiction.get("explanation"),
-        "confidence": contradiction.get("confidence"),
-        "source_type": source,
+        "contradiction_explanation": contradiction.get("explanation"),
     }
     await _run_sync(lambda: get_client().table("alerts").insert(alert).execute())
 

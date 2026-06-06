@@ -7,6 +7,7 @@ from datetime import datetime
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
 
 from adapters.github import get_diff, post_commit_comment, verify_github_signature
+from adapters.slack import format_slack_reply, post_slack_reply
 from api import db, demo_cache
 
 router = APIRouter()
@@ -72,24 +73,6 @@ def format_pr_comment(contradiction: dict, sha: str, diff: str = "") -> str:
 [View in Covenant →]({COVENANT_URL}/decisions/{d.get("id", "")})"""
 
 
-async def _post_slack_reply(channel: str, thread_ts: str, text: str):
-    from slack_sdk.web.async_client import AsyncWebClient
-
-    slack = AsyncWebClient(token=os.getenv("SLACK_BOT_TOKEN", ""))
-    await slack.chat_postMessage(channel=channel, thread_ts=thread_ts, text=text)
-
-
-def _format_slack_reply(contradiction: dict) -> str:
-    d = contradiction["decision"]
-    return (
-        f"⚠️ *Covenant alert* — this may contradict a past decision:\n"
-        f"> *{d.get('summary', '')}*\n"
-        f"Severity: `{contradiction.get('severity')}` | "
-        f"Confidence: {contradiction.get('confidence', 0):.0%}\n"
-        f"{contradiction.get('explanation', '')}"
-    )
-
-
 # ── background tasks ─────────────────────────────────────────────────────────
 
 async def process_push(payload: dict):
@@ -111,7 +94,7 @@ async def process_push(payload: dict):
         await db.insert_alert(top, sha, "commit")
 
 
-async def _process_slack_message(event: dict):
+async def process_slack_message(event: dict):
     from agent.classifier import classify_decision
     from agent.contradiction import find_contradictions
 
@@ -121,8 +104,8 @@ async def _process_slack_message(event: dict):
         decisions = await db.get_all_decisions()
         contradictions = await find_contradictions(text, decisions)
         if contradictions:
-            reply = _format_slack_reply(contradictions[0])
-            await _post_slack_reply(event["channel"], event["ts"], reply)
+            reply = format_slack_reply(contradictions[0])
+            await post_slack_reply(event["channel"], event["ts"], reply)
             await db.insert_alert(contradictions[0], event["ts"], "slack")
 
 
@@ -189,7 +172,11 @@ async def github_webhook(req: Request, bg: BackgroundTasks):
 async def slack_webhook(req: Request, bg: BackgroundTasks):
     payload = await req.json()
     if payload.get("type") == "url_verification":
-        return {"challenge": payload.get("challenge")}
+        return {"challenge": payload["challenge"]}
+    if payload.get("type") == "event_callback":
+        event = payload["event"]
+        if event.get("type") == "message" and not event.get("subtype"):
+            bg.add_task(process_slack_message, event)
     return {"ok": True}
 
 
