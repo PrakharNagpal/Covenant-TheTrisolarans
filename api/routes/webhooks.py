@@ -3,7 +3,8 @@ import hashlib
 import hmac
 import json
 import os
-from datetime import datetime
+import re
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
 
@@ -73,6 +74,52 @@ def format_pr_comment(contradiction: dict, sha: str, diff: str = "") -> str:
 [View in Covenant →]({COVENANT_URL}/decisions/{d.get("id", "")})"""
 
 
+def _parse_tool_role_decision(text: str) -> tuple[str, str] | None:
+    normalized = " ".join(text.lower().strip().split())
+    normalized = re.sub(r"^(let'?s|we decided to|we will|we'll|i am going to|we are going to)\s+use\s+", "", normalized)
+    match = re.match(r"(?P<tool>.+?)\s+as\s+(?:our|the|a|an)\s+(?P<role>.+)$", normalized)
+    if not match:
+        return None
+    return match.group("tool").strip(), match.group("role").strip()
+
+
+def _same_role_tool_contradictions(
+    text: str,
+    decisions: list[dict],
+) -> list[dict]:
+    parsed = _parse_tool_role_decision(text)
+    if not parsed:
+        return []
+
+    new_tool, role = parsed
+    for decision in decisions:
+        existing = _parse_tool_role_decision(decision.get("summary", ""))
+        if not existing:
+            existing = _parse_tool_role_decision(decision.get("rationale", ""))
+        if not existing:
+            continue
+
+        old_tool, old_role = existing
+        if old_role == role and old_tool != new_tool:
+            print(
+                f"[SLACK DECISION] deterministic contradiction: {old_tool} vs {new_tool} for {role}",
+                flush=True,
+            )
+            return [
+                {
+                    "contradicts": True,
+                    "severity": "structural",
+                    "explanation": (
+                        f"This chooses {new_tool} as our {role}, contradicting the earlier "
+                        f"decision to use {old_tool} as our {role}."
+                    ),
+                    "confidence": 0.99,
+                    "decision": decision,
+                }
+            ]
+    return []
+
+
 # ── background tasks ─────────────────────────────────────────────────────────
 
 async def process_push(payload: dict):
@@ -100,21 +147,52 @@ async def process_slack_message(event: dict):
     import uuid
 
     text = event.get("text", "")
+    source_ref = f"{event.get('channel', '')}/{event.get('ts', '')}"
     classification = await classify_decision(text)
+    print(
+        f"[SLACK DECISION] classified {source_ref} as {classification.get('label')}",
+        flush=True,
+    )
     if classification["label"] == "DECISION":
+        decisions = await db.get_all_decisions()
+        contradictions = _same_role_tool_contradictions(text, decisions)
+        if not contradictions:
+            contradictions = await find_contradictions(text, decisions)
+
+        created_at = datetime.now(timezone.utc).isoformat()
+        if event.get("ts"):
+            try:
+                created_at = datetime.fromtimestamp(
+                    float(event["ts"]),
+                    tz=timezone.utc,
+                ).isoformat()
+            except ValueError:
+                pass
+
         new_decision = {
             "id": str(uuid.uuid4()),
             "summary": classification.get("extracted_choice") or text[:200],
             "rationale": text,
             "participants": [event.get("user", "unknown")],
             "source": "slack",
-            "source_ref": f"{event.get('channel', '')}/{event.get('ts', '')}",
-            "created_at": datetime.utcnow().isoformat() + "Z",
+            "source_ref": source_ref,
+            "created_at": created_at,
         }
-        await db.upsert_decision(new_decision)
+        existing = await db.get_decision_by_source_ref("slack", source_ref)
+        if existing:
+            print(f"[SLACK DECISION] already captured {source_ref}", flush=True)
+        elif contradictions:
+            print(
+                f"[SLACK DECISION] not inserted because contradiction was found for {source_ref}",
+                flush=True,
+            )
+        else:
+            await db.upsert_decision(new_decision)
+            print(
+                f"[SLACK DECISION] inserted {new_decision['id']} from {source_ref}",
+                flush=True,
+            )
 
-        decisions = await db.get_all_decisions()
-        contradictions = await find_contradictions(text, decisions)
         if contradictions:
             reply = format_slack_reply(contradictions[0])
             await post_slack_reply(event["channel"], event["ts"], reply)

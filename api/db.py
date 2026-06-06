@@ -103,6 +103,32 @@ async def upsert_decision(decision: dict):
     await _run_sync(lambda: get_client().table("decisions").upsert(decision).execute())
 
 
+async def get_decision_by_source_ref(source: str, source_ref: str) -> dict | None:
+    if _is_demo_mode():
+        return next(
+            (
+                decision
+                for decision in _load_demo_decisions()
+                if decision.get("source") == source
+                and decision.get("source_ref") == source_ref
+            ),
+            None,
+        )
+
+    result = await _run_sync(
+        lambda: get_client()
+        .table("decisions")
+        .select("*")
+        .eq("source", source)
+        .eq("source_ref", source_ref)
+        .maybe_single()
+        .execute()
+    )
+    if result is None:
+        return None
+    return result.data
+
+
 async def insert_alert(contradiction: dict, source_ref: str, source: str):
     if _is_demo_mode():
         _demo_alerts.insert(
