@@ -120,8 +120,8 @@ export function ArchaeologyChat() {
   }
 
   return (
-    <main className="min-h-[calc(100vh-56px)] bg-[#F8F8FC] px-6 py-6 sm:py-8">
-      <section className="mx-auto flex max-w-[580px] flex-col items-center">
+    <main className="min-h-[calc(100vh-56px)] bg-[var(--app-bg)] px-6 py-6 sm:py-8">
+      <section className="mx-auto flex max-w-[720px] flex-col items-center">
         <header className="mb-4 text-center">
           <div className="mb-2 text-[26px]" aria-hidden="true">
             💬
@@ -135,7 +135,7 @@ export function ArchaeologyChat() {
         </header>
 
         <section
-          className="flex h-[340px] w-full flex-col overflow-hidden bg-white sm:h-[380px]"
+          className="flex h-[340px] w-full flex-col overflow-hidden bg-[var(--panel)] sm:h-[380px]"
           data-testid="archaeology-chat"
           style={{
             border: "1.5px solid #E8E8F0",

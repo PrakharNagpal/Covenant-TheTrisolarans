@@ -17,10 +17,10 @@ export default function LineagePage() {
 
 function LineageFallback() {
   return (
-    <main className="min-h-screen bg-white px-6 py-20">
-      <section className="mx-auto max-w-[720px]">
+    <main className="min-h-screen bg-[var(--app-bg)] px-6 py-20">
+      <section className="mx-auto max-w-[860px]">
         <div className="h-8 w-36 rounded-full bg-[var(--muted)]" />
-        <div className="mt-5 h-48 rounded-[18px] border-[1.5px] border-[#E8E8F0] bg-white" />
+        <div className="mt-5 h-48 rounded-[18px] border-[1.5px] border-[var(--border)] bg-[var(--panel)]" />
       </section>
     </main>
   );

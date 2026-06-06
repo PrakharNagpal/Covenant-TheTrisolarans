@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
 
 from adapters.github import get_diff, post_commit_comment, verify_github_signature
-from adapters.slack import format_slack_reply, post_slack_reply
+from adapters.slack import format_slack_reply, get_slack_user_name, post_slack_reply
 from api import db, demo_cache
 
 router = APIRouter()
@@ -154,6 +154,7 @@ async def process_slack_message(event: dict):
         flush=True,
     )
     if classification["label"] == "DECISION":
+        participant = await get_slack_user_name(event.get("user"))
         decisions = await db.get_all_decisions()
         contradictions = _same_role_tool_contradictions(text, decisions)
         if not contradictions:
@@ -173,7 +174,7 @@ async def process_slack_message(event: dict):
             "id": str(uuid.uuid4()),
             "summary": classification.get("extracted_choice") or text[:200],
             "rationale": text,
-            "participants": [event.get("user", "unknown")],
+            "participants": [participant],
             "source": "slack",
             "source_ref": source_ref,
             "created_at": created_at,
