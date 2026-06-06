@@ -17,23 +17,31 @@ CONTRADICTION_PROMPT = """You check whether new input contradicts a past team de
 
 Input format:
 PAST_DECISION: {decision object with summary, rationale, alternatives_rejected}
-NEW_INPUT: {code diff, spec change, or new message}
+NEW_INPUT: {code diff, spec change, or Slack/Linear message}
 
 Output JSON only, no other text:
 {
   "contradicts": true|false,
   "severity": "cosmetic"|"behavioural"|"structural",
-  "explanation": "one sentence explaining the contradiction",
+  "explanation": "2 sentences: what was decided before, and specifically how the new input breaks it",
   "confidence": 0.0-1.0
 }
 
 Severity guide:
-- cosmetic: label or naming change, no functional impact
-- behavioural: same shape, different logic (e.g. validation timing)
-- structural: fundamentally different approach (e.g. JWT to sessions, REST to GraphQL)
+- cosmetic: label or naming change only, no functional impact
+- behavioural: same overall approach but different logic (e.g. validation timing, error handling)
+- structural: fundamentally different approach that replaces what was decided (e.g. JWT → sessions, REST → GraphQL, PostgreSQL → MongoDB)
 
-Be conservative. Only flag clear contradictions.
-confidence below 0.7 should output contradicts: false."""
+Key rules:
+1. REPLACING is a contradiction. EXTENDING alongside is not (unless the decision used the word "only" or "exactly").
+   - "Use PostgreSQL" + adding MongoDB as a second DB = contradiction (replaces the single-DB decision)
+   - "Exactly 3 checkout steps" + adding a 4th step = contradiction (violates the explicit count)
+   - "Use JWT" + also adding an OAuth flow = NOT a contradiction (JWT is still used)
+2. A refactor that keeps the same technology is NOT a contradiction.
+3. A code comment or variable rename that references a different approach is NOT a contradiction unless the logic actually changes.
+4. Only flag when you are confident the core decision is being undone or violated.
+
+Be conservative — false positives damage trust more than false negatives."""
 
 _STOPWORDS = {
     "about",
@@ -92,49 +100,28 @@ _STOPWORDS = {
     "would",
 }
 
-_TOPIC_KEYWORDS = {
-    "auth": {
-        "auth",
-        "authentication",
-        "bearer",
-        "cookie",
-        "cookies",
-        "jwt",
-        "login",
-        "logout",
-        "password",
-        "revocation",
-        "session",
-        "sessions",
-        "token",
-        "tokens",
-    },
+_TOPIC_ANCHORS = {
+    "auth": {"auth", "authentication", "jwt", "session", "sessions", "token", "tokens", "cookie", "cookies", "bearer", "login", "logout", "password", "revocation"},
     "database": {"acid", "database", "db", "dynamodb", "jsonb", "mongo", "mongodb", "mysql", "postgres", "postgresql", "relational"},
     "checkout": {"cart", "checkout", "delivery", "flow", "payment", "step", "steps"},
-    "pii": {"address", "email", "legal", "orders", "pdpa", "pii", "retention", "user_id"},
+    "pii": {"address", "email", "orders", "pdpa", "pii", "user_id", "retention"},
     "deployment": {"aws", "cloudfront", "deploy", "deployment", "ec2", "ecs", "fly", "railway", "vercel"},
-    "retry": {"backoff", "fixed", "interval", "jitter", "linear", "retries", "retry", "stripe"},
-    "api_versioning": {"accept", "api", "header", "headers", "path", "url", "version", "versioning", "v1", "v2"},
-    "rate_limit": {"authenticated", "limit", "minute", "rate", "req", "requests", "scrapers"},
-    "redis": {"cache", "caching", "counter", "counters", "ephemeral", "redis"},
-    "monorepo": {"monorepo", "polyrepo", "repository", "shared", "submodules", "types", "workspaces"},
+    "retry": {"backoff", "jitter", "retries", "retry", "stripe", "interval", "fixed"},
+    "api_versioning": {"accept", "header", "headers", "url", "v1", "v2", "version", "versioning", "path"},
+    "rate_limit": {"limit", "rate", "req", "requests", "minute", "authenticated"},
+    "redis": {"cache", "caching", "counter", "counters", "redis", "ephemeral"},
+    "monorepo": {"monorepo", "polyrepo", "submodules", "workspaces", "repository"},
+    "tooling": {
+        "agent", "assistant", "claude", "codex", "coding", "copilot", "cursor",
+        "devin", "ide", "language", "linter", "tool", "toolchain",
+        # languages / frameworks that teams decide on
+        "dart", "flutter", "golang", "java", "javascript", "kotlin", "python",
+        "react", "rust", "swift", "typescript",
+    },
 }
 
-_TOPIC_ANCHORS = {
-    "auth": {"auth", "authentication", "jwt", "session", "sessions", "token", "tokens", "cookie", "cookies"},
-    "database": {"acid", "dynamodb", "mongo", "mongodb", "mysql", "postgres", "postgresql"},
-    "checkout": {"cart", "checkout", "delivery", "payment"},
-    "pii": {"address", "email", "orders", "pdpa", "pii", "user_id"},
-    "deployment": {"aws", "cloudfront", "deploy", "deployment", "ec2", "ecs", "fly", "railway", "vercel"},
-    "retry": {"backoff", "jitter", "retries", "retry", "stripe"},
-    "api_versioning": {"accept", "header", "headers", "url", "v1", "v2", "version", "versioning"},
-    "rate_limit": {"limit", "rate", "req"},
-    "redis": {"cache", "caching", "counter", "counters", "redis"},
-    "monorepo": {"monorepo", "polyrepo", "submodules", "workspaces"},
-}
-
-_MIN_RELEVANCE_SCORE = 30
-_MAX_CANDIDATE_DECISIONS = 4
+_MIN_RELEVANCE_SCORE = 20  # 1 topic hit (20pts) is enough to reach GPT-4o
+_MAX_CANDIDATE_DECISIONS = 6
 
 DETAIL_PROMPT = """Expand a contradiction explanation for a GitHub PR comment.
 

@@ -9,7 +9,13 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
 
-from adapters.github import get_diff, post_commit_comment, verify_github_signature
+from adapters.github import (
+    get_diff,
+    get_pull_request_diff,
+    post_commit_comment,
+    post_pull_request_comment,
+    verify_github_signature,
+)
 from adapters.slack import (
     format_slack_overwrite_prompt,
     get_slack_user_name,
@@ -83,8 +89,17 @@ def format_pr_comment(contradiction: dict, sha: str, diff: str = "") -> str:
 
 def _parse_tool_role_decision(text: str) -> tuple[str, str] | None:
     normalized = " ".join(text.lower().strip().split())
-    normalized = re.sub(r"^(let'?s|we decided to|we will|we'll|i am going to|we are going to)\s+use\s+", "", normalized)
-    match = re.match(r"(?P<tool>.+?)\s+as\s+(?:our|the|a|an)\s+(?P<role>.+)$", normalized)
+    # strip leading intent phrases so "we should use X as Y" → "X as Y"
+    normalized = re.sub(
+        r"^(no[,\s]+)?(let'?s|we decided to|we will|we'll|we should|we're going to|"
+        r"i am going to|we are going to|i want to|no i want to|going to|going with|"
+        r"we're using|we are using|we use|we chose|we picked|we agreed on|"
+        r"we'll use|we need to use|we should use)\s+(use\s+)?",
+        "",
+        normalized,
+    )
+    # match "X as/for [our/the/a/an] Y" — article and preposition are flexible
+    match = re.match(r"(?P<tool>.+?)\s+(?:as|for)\s+(?:our\s+|the\s+|a\s+|an\s+)?(?P<role>.+)$", normalized)
     if not match:
         return None
     return match.group("tool").strip(), match.group("role").strip()
@@ -180,6 +195,8 @@ async def _handle_slack_text_approval(event: dict) -> bool:
 async def process_push(payload: dict):
     sha = payload["after"]
     before = payload["before"]
+    repo = (payload.get("repository") or {}).get("full_name")
+    print(f"[GITHUB PUSH] processing {repo or 'configured repo'} {before}...{sha}", flush=True)
     diff = await get_diff(before, sha)
 
     contradictions = await demo_cache.get_cached_contradictions(diff)
@@ -194,6 +211,59 @@ async def process_push(payload: dict):
         body = format_pr_comment(top, sha, diff)
         await post_commit_comment(sha, body)
         await db.insert_alert(top, sha, "commit")
+        print(f"[GITHUB PUSH] posted commit comment on {sha}", flush=True)
+    else:
+        print(f"[GITHUB PUSH] no contradictions for {sha}", flush=True)
+
+
+async def process_pull_request(payload: dict):
+    from agent.contradiction import find_contradictions
+
+    action = payload.get("action")
+    number = payload.get("number")
+    repo = (payload.get("repository") or {}).get("full_name")
+    print(f"[GITHUB PR] received action={action} repo={repo} number={number}", flush=True)
+    if action not in {"opened", "synchronize", "reopened", "ready_for_review"}:
+        print(f"[GITHUB PR] skipped unsupported action={action}", flush=True)
+        return
+
+    pull_request = payload.get("pull_request") or {}
+    if pull_request.get("draft"):
+        print(f"[GITHUB PR] skipped draft PR #{number}", flush=True)
+        return
+
+    if not number:
+        print("[GITHUB PR] skipped payload with no PR number", flush=True)
+        return
+
+    try:
+        diff = await get_pull_request_diff(number, repo)
+    except Exception as exc:
+        print(f"[GITHUB PR] failed to fetch diff for {repo}#{number}: {exc}", flush=True)
+        return
+    print(f"[GITHUB PR] fetched diff for {repo}#{number}: {len(diff)} chars", flush=True)
+
+    contradictions = await demo_cache.get_cached_contradictions(diff)
+    if contradictions is None:
+        decisions = await db.get_all_decisions()
+        contradictions = await find_contradictions(diff, decisions)
+
+    if not contradictions:
+        print(f"[GITHUB PR] no contradictions for {repo}#{number}; no comment posted", flush=True)
+        return
+
+    top = contradictions[0]
+    sha = (pull_request.get("head") or {}).get("sha", "")
+    body = format_pr_comment(top, sha, diff)
+    try:
+        await post_pull_request_comment(number, body, repo)
+    except Exception as exc:
+        print(f"[GITHUB PR] failed to post comment on {repo}#{number}: {exc}", flush=True)
+        return
+
+    source_ref = pull_request.get("html_url") or f"{repo or 'github'}#{number}"
+    await db.insert_alert(top, source_ref, "github_pr")
+    print(f"[GITHUB PR] posted conversation comment on {repo}#{number}", flush=True)
 
 
 async def process_slack_message(event: dict):
@@ -328,6 +398,7 @@ async def process_linear_comment(data: dict):
 async def github_webhook(req: Request, bg: BackgroundTasks):
     payload_bytes = await req.body()
     signature = req.headers.get("x-hub-signature-256")
+    event_type = req.headers.get("x-github-event", "")
     if not verify_github_signature(payload_bytes, signature):
         raise HTTPException(status_code=401, detail="Invalid GitHub signature")
 
@@ -336,10 +407,15 @@ async def github_webhook(req: Request, bg: BackgroundTasks):
     except json.JSONDecodeError as exc:
         raise HTTPException(status_code=400, detail="Invalid JSON payload") from exc
 
-    if not payload.get("commits"):
+    if event_type == "pull_request":
+        bg.add_task(process_pull_request, payload)
         return {"ok": True}
 
-    bg.add_task(process_push, payload)
+    if event_type == "push" or payload.get("commits"):
+        if payload.get("commits"):
+            bg.add_task(process_push, payload)
+        return {"ok": True}
+
     return {"ok": True}
 
 
