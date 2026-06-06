@@ -259,6 +259,32 @@ async def insert_alert(contradiction: dict, source_ref: str, source: str):
     await _run_sync(lambda: get_client().table("alerts").insert(alert).execute())
 
 
+async def get_alert_by_source_ref(source: str, source_ref: str) -> dict | None:
+    if _is_demo_mode():
+        return next(
+            (
+                alert
+                for alert in _demo_alerts
+                if alert.get("source") == source
+                and alert.get("source_ref") == source_ref
+            ),
+            None,
+        )
+
+    result = await _run_sync(
+        lambda: get_client()
+        .table("alerts")
+        .select("*")
+        .eq("source", source)
+        .eq("source_ref", source_ref)
+        .order("created_at", desc=True)
+        .limit(1)
+        .execute()
+    )
+    rows = result.data or []
+    return rows[0] if rows else None
+
+
 async def get_alerts(since: str | None = None) -> list[dict]:
     if _is_demo_mode():
         if not since:
