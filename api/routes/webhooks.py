@@ -4,12 +4,17 @@ import hmac
 import json
 import os
 import re
+from urllib.parse import parse_qs
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
 
 from adapters.github import get_diff, post_commit_comment, verify_github_signature
-from adapters.slack import format_slack_reply, post_slack_reply
+from adapters.slack import (
+    format_slack_overwrite_prompt,
+    post_slack_overwrite_prompt,
+    post_slack_reply,
+)
 from api import db, demo_cache
 
 router = APIRouter()
@@ -182,9 +187,31 @@ async def process_slack_message(event: dict):
         if existing:
             print(f"[SLACK DECISION] already captured {source_ref}", flush=True)
         elif contradictions:
+            pending_id = str(uuid.uuid4())
+            contradiction_decision_ids = [
+                contradiction["decision"]["id"]
+                for contradiction in contradictions
+                if contradiction.get("decision", {}).get("id")
+            ]
+            await db.create_pending_overwrite(
+                pending_id=pending_id,
+                source="slack",
+                source_ref=source_ref,
+                channel=event["channel"],
+                thread_ts=event["ts"],
+                new_decision=new_decision,
+                contradiction_decision_ids=contradiction_decision_ids,
+            )
             print(
                 f"[SLACK DECISION] not inserted because contradiction was found for {source_ref}",
                 flush=True,
+            )
+            prompt = format_slack_overwrite_prompt(contradictions[0], new_decision)
+            await post_slack_overwrite_prompt(
+                event["channel"],
+                event["ts"],
+                prompt,
+                pending_id,
             )
         else:
             await db.upsert_decision(new_decision)
@@ -194,9 +221,50 @@ async def process_slack_message(event: dict):
             )
 
         if contradictions:
-            reply = format_slack_reply(contradictions[0])
-            await post_slack_reply(event["channel"], event["ts"], reply)
             await db.insert_alert(contradictions[0], event["ts"], "slack")
+
+
+async def process_slack_interaction(payload: dict):
+    actions = payload.get("actions") or []
+    if not actions:
+        return
+
+    action = actions[0]
+    pending_id = action.get("value")
+    action_id = action.get("action_id")
+    if not pending_id or action_id not in {"covenant_overwrite_yes", "covenant_overwrite_no"}:
+        return
+
+    pending = await db.get_pending_overwrite(pending_id)
+    channel = pending.get("channel") if pending else payload.get("channel", {}).get("id")
+    thread_ts = pending.get("thread_ts") if pending else payload.get("message", {}).get("ts")
+
+    if not pending:
+        if channel and thread_ts:
+            await post_slack_reply(
+                channel,
+                thread_ts,
+                "Covenant could not find that pending decision request. It may have already been handled.",
+            )
+        return
+
+    if action_id == "covenant_overwrite_yes":
+        await db.delete_decisions(pending.get("contradiction_decision_ids") or [])
+        await db.upsert_decision(pending["new_decision"])
+        await db.delete_pending_overwrite(pending_id)
+        await post_slack_reply(
+            channel,
+            thread_ts,
+            "Covenant replaced the conflicting decision and added the new decision to the ledger.",
+        )
+        return
+
+    await db.delete_pending_overwrite(pending_id)
+    await post_slack_reply(
+        channel,
+        thread_ts,
+        "Covenant kept the existing decision. The new contradictory decision was not added.",
+    )
 
 
 async def process_linear_comment(data: dict):
@@ -236,6 +304,13 @@ async def github_webhook(req: Request, bg: BackgroundTasks):
 
 @router.post("/webhooks/slack")
 async def slack_webhook(req: Request, bg: BackgroundTasks):
+    content_type = req.headers.get("content-type", "")
+    if "application/x-www-form-urlencoded" in content_type:
+        form = parse_qs((await req.body()).decode())
+        payload = json.loads(form.get("payload", ["{}"])[0])
+        bg.add_task(process_slack_interaction, payload)
+        return {"ok": True}
+
     payload = await req.json()
     if payload.get("type") == "url_verification":
         return {"challenge": payload["challenge"]}

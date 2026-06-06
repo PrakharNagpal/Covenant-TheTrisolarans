@@ -38,6 +38,17 @@ CREATE TABLE IF NOT EXISTS alerts (
   created_at  timestamptz DEFAULT now()
 );
 
+CREATE TABLE IF NOT EXISTS pending_decision_overwrites (
+  id          uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+  source      text,
+  source_ref  text,
+  channel     text,
+  thread_ts   text,
+  new_decision jsonb NOT NULL,
+  contradiction_decision_ids text[] DEFAULT '{}',
+  created_at  timestamptz DEFAULT now()
+);
+
 -- Compatibility columns for projects that already ran an older copy of this file.
 ALTER TABLE decisions ADD COLUMN IF NOT EXISTS source_ref text;
 ALTER TABLE decisions ADD COLUMN IF NOT EXISTS embedding vector(1536);
@@ -110,6 +121,13 @@ END $$;
 
 UPDATE alerts
 SET status = COALESCE(status, 'open');
+
+ALTER TABLE pending_decision_overwrites ADD COLUMN IF NOT EXISTS source text;
+ALTER TABLE pending_decision_overwrites ADD COLUMN IF NOT EXISTS source_ref text;
+ALTER TABLE pending_decision_overwrites ADD COLUMN IF NOT EXISTS channel text;
+ALTER TABLE pending_decision_overwrites ADD COLUMN IF NOT EXISTS thread_ts text;
+ALTER TABLE pending_decision_overwrites ADD COLUMN IF NOT EXISTS new_decision jsonb;
+ALTER TABLE pending_decision_overwrites ADD COLUMN IF NOT EXISTS contradiction_decision_ids text[] DEFAULT '{}';
 
 -- pgvector similarity search function
 CREATE OR REPLACE FUNCTION match_decisions(

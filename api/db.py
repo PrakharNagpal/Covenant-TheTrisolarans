@@ -9,6 +9,7 @@ _client: Any | None = None
 _demo_decisions: list[dict] | None = None
 _demo_lineage: list[dict] | None = None
 _demo_alerts: list[dict] = []
+_demo_pending_overwrites: dict[str, dict] = {}
 
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 
@@ -103,6 +104,24 @@ async def upsert_decision(decision: dict):
     await _run_sync(lambda: get_client().table("decisions").upsert(decision).execute())
 
 
+async def delete_decisions(decision_ids: list[str]):
+    if not decision_ids:
+        return
+
+    if _is_demo_mode():
+        decisions = _load_demo_decisions()
+        decisions[:] = [
+            decision
+            for decision in decisions
+            if decision.get("id") not in set(decision_ids)
+        ]
+        return
+
+    await _run_sync(
+        lambda: get_client().table("decisions").delete().in_("id", decision_ids).execute()
+    )
+
+
 async def get_decision_by_source_ref(source: str, source_ref: str) -> dict | None:
     if _is_demo_mode():
         return next(
@@ -127,6 +146,66 @@ async def get_decision_by_source_ref(source: str, source_ref: str) -> dict | Non
     if result is None:
         return None
     return result.data
+
+
+async def create_pending_overwrite(
+    pending_id: str,
+    source: str,
+    source_ref: str,
+    channel: str,
+    thread_ts: str,
+    new_decision: dict,
+    contradiction_decision_ids: list[str],
+):
+    pending = {
+        "id": pending_id,
+        "source": source,
+        "source_ref": source_ref,
+        "channel": channel,
+        "thread_ts": thread_ts,
+        "new_decision": new_decision,
+        "contradiction_decision_ids": contradiction_decision_ids,
+    }
+
+    if _is_demo_mode():
+        _demo_pending_overwrites[pending_id] = pending
+        return
+
+    await _run_sync(
+        lambda: get_client()
+        .table("pending_decision_overwrites")
+        .upsert(pending, on_conflict="id")
+        .execute()
+    )
+
+
+async def get_pending_overwrite(pending_id: str) -> dict | None:
+    if _is_demo_mode():
+        return _demo_pending_overwrites.get(pending_id)
+
+    result = await _run_sync(
+        lambda: get_client()
+        .table("pending_decision_overwrites")
+        .select("*")
+        .eq("id", pending_id)
+        .maybe_single()
+        .execute()
+    )
+    return result.data if result else None
+
+
+async def delete_pending_overwrite(pending_id: str):
+    if _is_demo_mode():
+        _demo_pending_overwrites.pop(pending_id, None)
+        return
+
+    await _run_sync(
+        lambda: get_client()
+        .table("pending_decision_overwrites")
+        .delete()
+        .eq("id", pending_id)
+        .execute()
+    )
 
 
 async def insert_alert(contradiction: dict, source_ref: str, source: str):
