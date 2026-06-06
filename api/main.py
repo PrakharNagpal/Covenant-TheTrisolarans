@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 load_dotenv()
 
+from api import demo_cache
 from api.routes import alerts, archaeology, check, decisions, webhooks
 
 app = FastAPI(title="Covenant API")
@@ -33,6 +34,7 @@ async def health():
 
 @app.on_event("startup")
 async def startup():
+    await demo_cache.load_jwt_decision()
     if os.getenv("NOTION_MODE") == "LIVE":
         # Safe extension point for the Notion poller task.
         return None

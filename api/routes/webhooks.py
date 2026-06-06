@@ -7,23 +7,11 @@ from datetime import datetime
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
 
 from adapters.github import get_diff, post_commit_comment, verify_github_signature
-from api import db
+from api import db, demo_cache
 
 router = APIRouter()
 
 COVENANT_URL = os.getenv("NGROK_URL", "http://localhost:3000")
-
-# Demo cache — used when MODE=DEMO for the known demo commits.
-DEMO_CACHE = {
-    "session": {
-        "contradicts": True,
-        "severity": "structural",
-        "explanation": "This introduces session-based auth, directly contradicting the Jan 14 JWT decision.",
-        "confidence": 0.95,
-        "decision": {},
-        "diff_summary": "This commit replaces JWT token issuance and bearer-token middleware with server-side session creation, cookies, and session lookup.",
-    }
-}
 
 
 def _verify_linear_signature(payload_bytes: bytes, signature: str) -> bool:
@@ -62,25 +50,6 @@ def _summarize_diff(diff: str, contradiction: dict) -> str:
         suffix = " and more" if len(files) > 3 else ""
         return f"This commit changes {joined}{suffix}."
     return "This commit changes code related to the flagged decision."
-
-
-def _find_jwt_decision(decisions: list[dict]) -> dict:
-    for decision in decisions:
-        searchable = json.dumps(decision).lower()
-        if "jwt" in searchable:
-            return decision
-    return decisions[0] if decisions else {}
-
-
-def _is_demo_session_auth(diff: str) -> bool:
-    lowered = diff.lower()
-    return "session-based authentication" in lowered and "reverts the jwt approach" in lowered
-
-
-def _is_demo_no_violation(diff: str) -> bool:
-    lowered = diff.lower()
-    readme_changed = "file: readme.md" in lowered or "diff --git a/readme.md b/readme.md" in lowered
-    return readme_changed and "## running locally" in lowered
 
 
 def format_pr_comment(contradiction: dict, sha: str, diff: str = "") -> str:
@@ -124,20 +93,15 @@ def _format_slack_reply(contradiction: dict) -> str:
 # ── background tasks ─────────────────────────────────────────────────────────
 
 async def process_push(payload: dict):
-    from agent.contradiction import find_contradictions
-
     sha = payload["after"]
     before = payload["before"]
     diff = await get_diff(before, sha)
-    decisions = await db.get_all_decisions()
 
-    if os.getenv("MODE") == "DEMO" and _is_demo_session_auth(diff):
-        cached = dict(DEMO_CACHE["session"])
-        cached["decision"] = _find_jwt_decision(decisions)
-        contradictions = [cached]
-    elif os.getenv("MODE") == "DEMO" and _is_demo_no_violation(diff):
-        contradictions = []
-    else:
+    contradictions = await demo_cache.get_cached_contradictions(diff)
+    if contradictions is None:
+        from agent.contradiction import find_contradictions
+
+        decisions = await db.get_all_decisions()
         contradictions = await find_contradictions(diff, decisions)
 
     if contradictions:
