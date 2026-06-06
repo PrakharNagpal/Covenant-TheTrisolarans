@@ -194,6 +194,29 @@ async def get_pending_overwrite(pending_id: str) -> dict | None:
     return result.data if result else None
 
 
+async def get_pending_overwrite_by_thread(channel: str, thread_ts: str) -> dict | None:
+    if _is_demo_mode():
+        matches = [
+            pending
+            for pending in _demo_pending_overwrites.values()
+            if pending.get("channel") == channel and pending.get("thread_ts") == thread_ts
+        ]
+        return matches[-1] if matches else None
+
+    result = await _run_sync(
+        lambda: get_client()
+        .table("pending_decision_overwrites")
+        .select("*")
+        .eq("channel", channel)
+        .eq("thread_ts", thread_ts)
+        .order("created_at", desc=True)
+        .limit(1)
+        .execute()
+    )
+    rows = result.data or []
+    return rows[0] if rows else None
+
+
 async def delete_pending_overwrite(pending_id: str):
     if _is_demo_mode():
         _demo_pending_overwrites.pop(pending_id, None)

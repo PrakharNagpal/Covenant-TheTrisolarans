@@ -66,35 +66,12 @@ async def post_slack_overwrite_prompt(
     pending_id: str,
 ):
     slack = WebClient(token=os.getenv("SLACK_BOT_TOKEN", ""))
+    prompt = f"{text}\n\nReply in this thread with `yes` to replace it, or `no` to keep the existing decision."
     await asyncio.to_thread(
         slack.chat_postMessage,
         channel=channel,
         thread_ts=thread_ts,
-        text=text,
-        blocks=[
-            {
-                "type": "section",
-                "text": {"type": "mrkdwn", "text": text},
-            },
-            {
-                "type": "actions",
-                "elements": [
-                    {
-                        "type": "button",
-                        "text": {"type": "plain_text", "text": "Yes, replace decision"},
-                        "style": "danger",
-                        "value": pending_id,
-                        "action_id": "covenant_overwrite_yes",
-                    },
-                    {
-                        "type": "button",
-                        "text": {"type": "plain_text", "text": "No, keep old decision"},
-                        "value": pending_id,
-                        "action_id": "covenant_overwrite_no",
-                    },
-                ],
-            },
-        ],
+        text=prompt,
     )
 
 
