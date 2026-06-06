@@ -27,7 +27,7 @@ const artifactIcons: Record<string, string> = {
 
 export function LineageView() {
   const searchParams = useSearchParams();
-  const id = searchParams.get("id") ?? "jwt-001";
+  const id = searchParams.get("id") ?? "d1a2b3c4-0001-4000-a000-000000000001";
   const [decision, setDecision] = useState<Decision | null>(null);
   const [lineage, setLineage] = useState<LineageLink[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -82,8 +82,8 @@ export function LineageView() {
   );
 
   return (
-    <main className="min-h-[calc(100vh-56px)] bg-white px-6 py-6 text-[var(--ink)] sm:py-8">
-      <section className="mx-auto flex max-w-[720px] flex-col gap-3">
+    <main className="min-h-[calc(100vh-56px)] bg-[var(--app-bg)] px-6 py-6 text-[var(--ink)] sm:py-8">
+      <section className="mx-auto flex max-w-[860px] flex-col gap-3">
         <div>
           <Link href="/">
             <Button size="sm" variant="ghost">
@@ -93,7 +93,7 @@ export function LineageView() {
         </div>
 
         <article
-          className="relative overflow-hidden bg-white px-5 py-4 sm:px-6 sm:py-5"
+          className="relative overflow-hidden bg-[var(--panel)] px-5 py-4 sm:px-6 sm:py-5"
           data-testid="decision-detail-card"
           style={{
             border: "1.5px solid #E8E8F0",
