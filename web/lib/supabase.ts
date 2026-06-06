@@ -1,0 +1,9 @@
+// Lane: P3 frontend
+import { createClient } from "@supabase/supabase-js";
+
+const supabaseUrl =
+  process.env.NEXT_PUBLIC_SUPABASE_URL ?? "https://example.supabase.co";
+const supabaseAnonKey =
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "phase-1-placeholder-key";
+
+export const supabase = createClient(supabaseUrl, supabaseAnonKey);

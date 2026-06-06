@@ -194,6 +194,9 @@ async def github_webhook(req: Request, bg: BackgroundTasks):
 
 @router.post("/webhooks/slack")
 async def slack_webhook(req: Request, bg: BackgroundTasks):
+    payload = await req.json()
+    if payload.get("type") == "url_verification":
+        return {"challenge": payload.get("challenge")}
     return {"ok": True}
 
 
