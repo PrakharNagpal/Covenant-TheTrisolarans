@@ -1,5 +1,6 @@
 # Lane: P2 backend
-import asyncio
+import hashlib
+import hmac
 import json
 import os
 from datetime import datetime
@@ -16,11 +17,10 @@ COVENANT_URL = os.getenv("NGROK_URL", "http://localhost:3000")
 
 
 def _verify_linear_signature(payload_bytes: bytes, signature: str) -> bool:
-    import hashlib
-    import hmac
-
-    secret = os.getenv("LINEAR_WEBHOOK_SECRET", "").encode()
-    expected = hmac.new(secret, payload_bytes, hashlib.sha256).hexdigest()
+    secret = os.getenv("LINEAR_WEBHOOK_SECRET", "")
+    if not secret or not signature:
+        return False
+    expected = hmac.new(secret.encode(), payload_bytes, hashlib.sha256).hexdigest()
     return hmac.compare_digest(signature, expected)
 
 
@@ -121,10 +121,11 @@ async def process_slack_message(event: dict):
             await db.insert_alert(contradictions[0], event["ts"], "slack")
 
 
-async def _process_linear_comment(data: dict):
+async def process_linear_comment(data: dict):
     from agent.classifier import classify_decision
     from agent.contradiction import find_contradictions
 
+    print(f"[LINEAR WEBHOOK] processing comment {data.get('id', '')}", flush=True)
     text = data.get("body", "")
     classification = await classify_decision(text)
     if classification["label"] == "DECISION":
@@ -132,31 +133,6 @@ async def _process_linear_comment(data: dict):
         contradictions = await find_contradictions(text, decisions)
         if contradictions:
             await db.insert_alert(contradictions[0], data.get("id"), "linear")
-
-
-# ── notion poller (started in main.py startup) ────────────────────────────────
-
-async def notion_poller():
-    from notion_client import AsyncClient as NotionClient
-
-    notion = NotionClient(auth=os.getenv("NOTION_TOKEN", ""))
-    while True:
-        try:
-            results = await notion.databases.query(database_id=os.getenv("NOTION_DATABASE_ID", ""))
-            for row in results["results"]:
-                props = row["properties"]
-                decision = {
-                    "id": row["id"],
-                    "summary": props["Decision"]["title"][0]["plain_text"] if props.get("Decision", {}).get("title") else "",
-                    "rationale": props["Rationale"]["rich_text"][0]["plain_text"] if props.get("Rationale", {}).get("rich_text") else "",
-                    "participants": [p.strip() for p in props["Participants"]["rich_text"][0]["plain_text"].split(",")] if props.get("Participants", {}).get("rich_text") else [],
-                    "source": "notion",
-                    "created_at": row["created_time"],
-                }
-                await db.upsert_decision(decision)
-        except Exception as e:
-            print(f"Notion poll error: {e}")
-        await asyncio.sleep(60)
 
 
 # ── routes ────────────────────────────────────────────────────────────────────
@@ -194,4 +170,17 @@ async def slack_webhook(req: Request, bg: BackgroundTasks):
 
 @router.post("/webhooks/linear")
 async def linear_webhook(req: Request, bg: BackgroundTasks):
+    payload_bytes = await req.body()
+    signature = req.headers.get("linear-signature", "")
+    if not _verify_linear_signature(payload_bytes, signature):
+        raise HTTPException(status_code=401, detail="Invalid Linear signature")
+
+    try:
+        payload = json.loads(payload_bytes)
+    except json.JSONDecodeError as exc:
+        raise HTTPException(status_code=400, detail="Invalid JSON payload") from exc
+
+    if payload.get("type") == "Comment" and payload.get("action") == "create":
+        print("[LINEAR WEBHOOK] comment create received", flush=True)
+        bg.add_task(process_linear_comment, payload["data"])
     return {"ok": True}
