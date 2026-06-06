@@ -10,7 +10,12 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
 
 from adapters.github import get_diff, post_commit_comment, verify_github_signature
-from adapters.slack import format_slack_reply, get_slack_user_name, post_slack_reply, format_slack_overwrite_prompt,post_slack_overwrite_prompt
+from adapters.slack import (
+    format_slack_overwrite_prompt,
+    get_slack_user_name,
+    post_slack_overwrite_prompt,
+    post_slack_reply,
+)
 
 from api import db, demo_cache
 
@@ -124,6 +129,54 @@ def _same_role_tool_contradictions(
 
 # ── background tasks ─────────────────────────────────────────────────────────
 
+def _approval_from_text(text: str) -> bool | None:
+    normalized = re.sub(r"[^a-z]", "", text.lower())
+    if normalized in {"yes", "y", "approve", "approved", "replace", "overwrite"}:
+        return True
+    if normalized in {"no", "n", "reject", "rejected", "keep", "cancel"}:
+        return False
+    return None
+
+
+async def _apply_pending_overwrite_response(pending: dict, approved: bool):
+    channel = pending.get("channel")
+    thread_ts = pending.get("thread_ts")
+    pending_id = pending.get("id")
+
+    if approved:
+        await db.delete_decisions(pending.get("contradiction_decision_ids") or [])
+        await db.upsert_decision(pending["new_decision"])
+        await db.delete_pending_overwrite(pending_id)
+        await post_slack_reply(
+            channel,
+            thread_ts,
+            "Covenant replaced the conflicting decision and added the new decision to the ledger.",
+        )
+        return
+
+    await db.delete_pending_overwrite(pending_id)
+    await post_slack_reply(
+        channel,
+        thread_ts,
+        "Covenant kept the existing decision. The new contradictory decision was not added.",
+    )
+
+
+async def _handle_slack_text_approval(event: dict) -> bool:
+    approved = _approval_from_text(event.get("text", ""))
+    thread_ts = event.get("thread_ts")
+    channel = event.get("channel")
+    if approved is None or not thread_ts or not channel:
+        return False
+
+    pending = await db.get_pending_overwrite_by_thread(channel, thread_ts)
+    if not pending:
+        return False
+
+    await _apply_pending_overwrite_response(pending, approved)
+    return True
+
+
 async def process_push(payload: dict):
     sha = payload["after"]
     before = payload["before"]
@@ -149,6 +202,9 @@ async def process_slack_message(event: dict):
     import uuid
 
     text = event.get("text", "")
+    if await _handle_slack_text_approval(event):
+        return
+
     source_ref = f"{event.get('channel', '')}/{event.get('ts', '')}"
     classification = await classify_decision(text)
     print(
@@ -246,22 +302,9 @@ async def process_slack_interaction(payload: dict):
             )
         return
 
-    if action_id == "covenant_overwrite_yes":
-        await db.delete_decisions(pending.get("contradiction_decision_ids") or [])
-        await db.upsert_decision(pending["new_decision"])
-        await db.delete_pending_overwrite(pending_id)
-        await post_slack_reply(
-            channel,
-            thread_ts,
-            "Covenant replaced the conflicting decision and added the new decision to the ledger.",
-        )
-        return
-
-    await db.delete_pending_overwrite(pending_id)
-    await post_slack_reply(
-        channel,
-        thread_ts,
-        "Covenant kept the existing decision. The new contradictory decision was not added.",
+    await _apply_pending_overwrite_response(
+        pending,
+        action_id == "covenant_overwrite_yes",
     )
 
 
