@@ -1,11 +1,13 @@
 # P1 lane — contradiction detector
 import asyncio
 import json
+import os
 import re
 from pathlib import Path
 
 from dotenv import load_dotenv
 from openai import AsyncOpenAI
+from supabase import create_client
 
 load_dotenv()
 
@@ -134,6 +136,15 @@ _TOPIC_ANCHORS = {
 _MIN_RELEVANCE_SCORE = 30
 _MAX_CANDIDATE_DECISIONS = 4
 
+DETAIL_PROMPT = """Expand a contradiction explanation for a GitHub PR comment.
+
+Write 2-3 concise sentences. Include:
+- the specific code pattern or identifier that triggered the flag
+- what the team originally decided and why
+- the severity in plain English
+
+Do not invent facts not present in the inputs."""
+
 
 def _terms(text: str) -> set[str]:
     return {
@@ -207,7 +218,28 @@ async def find_contradictions(new_input: str, decisions: list[dict]) -> list[dic
         )
         result = json.loads(response.choices[0].message.content)
         if result.get("contradicts") is True and result.get("confidence", 0.0) >= 0.7:
-            return {**result, "decision": decision, "_relevance_score": relevance_score}
+            detail_response = await client.chat.completions.create(
+                model="gpt-4o-mini",
+                temperature=0.1,
+                messages=[
+                    {"role": "system", "content": DETAIL_PROMPT},
+                    {
+                        "role": "user",
+                        "content": (
+                            f"PAST_DECISION: {json.dumps(decision)}\n\n"
+                            f"NEW_INPUT: {new_input}\n\n"
+                            f"CONTRADICTION_RESULT: {json.dumps(result)}"
+                        ),
+                    },
+                ],
+            )
+            explanation_detail = detail_response.choices[0].message.content or result.get("explanation", "")
+            return {
+                **result,
+                "explanation_detail": explanation_detail,
+                "decision": decision,
+                "_relevance_score": relevance_score,
+            }
         return None
 
     checked = await asyncio.gather(
@@ -222,6 +254,29 @@ async def find_contradictions(new_input: str, decisions: list[dict]) -> list[dic
     for result in sorted_results:
         result.pop("_relevance_score", None)
     return sorted_results
+
+
+async def find_all_contradictions(new_input: str) -> list[dict]:
+    supabase_url = os.getenv("SUPABASE_URL")
+    supabase_key = os.getenv("SUPABASE_SERVICE_KEY")
+    if not supabase_url or not supabase_key:
+        raise RuntimeError("SUPABASE_URL and SUPABASE_SERVICE_KEY must be set")
+
+    embedding_resp = await client.embeddings.create(
+        model="text-embedding-3-small",
+        input=new_input,
+    )
+    embedding = embedding_resp.data[0].embedding
+
+    supabase = create_client(supabase_url, supabase_key)
+    result = await asyncio.to_thread(
+        lambda: supabase.rpc(
+            "match_decisions",
+            {"query_embedding": embedding, "match_count": 10},
+        ).execute()
+    )
+    decisions = result.data or []
+    return await find_contradictions(new_input, decisions)
 
 
 def _load_jwt_decision(decisions_path: Path) -> dict:

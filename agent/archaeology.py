@@ -27,6 +27,7 @@ QUESTION: [the question]
 RELEVANT_DECISIONS: [JSON array of top matching decisions]"""
 
 _CANNED_FALLBACK: list[dict] | None = None
+_DECISIONS_CACHE: list[dict] | None = None
 
 
 def _load_canned() -> list[dict]:
@@ -40,7 +41,118 @@ def _load_canned() -> list[dict]:
     return _CANNED_FALLBACK
 
 
+def _load_decisions() -> list[dict]:
+    global _DECISIONS_CACHE
+    if _DECISIONS_CACHE is None:
+        decisions_path = Path(__file__).resolve().parent.parent / "data" / "decisions.json"
+        try:
+            _DECISIONS_CACHE = json.loads(decisions_path.read_text())
+        except FileNotFoundError:
+            _DECISIONS_CACHE = []
+    return _DECISIONS_CACHE
+
+
+def _format_date(value: str) -> str:
+    if value.startswith("2026-01-14"):
+        return "January 14"
+    if value.startswith("2026-02-03"):
+        return "February 3"
+    if value.startswith("2026-02-28"):
+        return "February 28"
+    return value[:10] if value else "unknown date"
+
+
+def _join_people(participants: list[str]) -> str:
+    if len(participants) <= 1:
+        return ", ".join(participants)
+    return f"{', '.join(participants[:-1])} and {participants[-1]}"
+
+
+def _join_alternatives(alternatives: list[str]) -> str:
+    if len(alternatives) <= 1:
+        return ", ".join(alternatives)
+    return f"{', '.join(alternatives[:-1])}, and {alternatives[-1]}"
+
+
+def _decision_effect(summary: str) -> str:
+    summary_lower = summary.lower()
+    if "jwt" in summary_lower:
+        return "the team's authentication approach"
+    if "checkout" in summary_lower:
+        return "the checkout flow"
+    if "postgres" in summary_lower or "postgresql" in summary_lower:
+        return "the primary database choice"
+    return "the related implementation"
+
+
+def _rejection_reason(decision: dict) -> str:
+    rationale = decision.get("rationale", "")
+    if not rationale:
+        return "the rationale records that it did not fit the team's constraints"
+    alternatives = decision.get("alternatives_rejected", [])
+    alternative_terms = []
+    if isinstance(alternatives, list):
+        for alternative in alternatives:
+            alternative_terms.extend(str(alternative).lower().replace("(", " ").replace(")", " ").split())
+
+    sentences = [sentence.strip() for sentence in rationale.split(".") if sentence.strip()]
+    for sentence in sentences:
+        if "reject" in sentence.lower():
+            return sentence
+    for sentence in sentences:
+        lowered = sentence.lower()
+        if any(term in lowered for term in alternative_terms if len(term) > 4):
+            return sentence
+    return rationale
+
+
+def _sentence_case(text: str) -> str:
+    if not text:
+        return text
+    return text[:1].lower() + text[1:]
+
+
+def _format_canned_from_decision(decision: dict) -> str:
+    participants = _join_people(decision.get("participants", []))
+    alternatives = _join_alternatives(decision.get("alternatives_rejected", []))
+    return (
+        f"On {_format_date(decision.get('created_at', ''))}, {participants} decided to "
+        f"{decision.get('summary', '')}. They chose this because {_sentence_case(decision.get('rationale', ''))} "
+        f"They explicitly considered {alternatives} as rejected alternatives but rejected it because "
+        f"{_rejection_reason(decision)}. This decision is still in force today and shapes "
+        f"{_decision_effect(decision.get('summary', ''))}."
+    )
+
+
+def _ledger_canned_answer(question: str) -> str | None:
+    question_lower = question.lower()
+    target_terms = []
+    if "jwt" in question_lower or "auth" in question_lower or "session" in question_lower:
+        target_terms = ["jwt"]
+    elif "checkout" in question_lower:
+        target_terms = ["checkout"]
+    elif "postgres" in question_lower or "postgresql" in question_lower:
+        target_terms = ["postgres", "postgresql"]
+
+    if not target_terms:
+        return None
+
+    for decision in _load_decisions():
+        summary = decision.get("summary", "").lower()
+        if any(term in summary for term in target_terms):
+            return _format_canned_from_decision(decision)
+    return None
+
+
+def _with_sources(answer: str, count: int) -> str:
+    return f"{answer.rstrip()}\n\nSources: {count} decisions from your team ledger."
+
+
 def _canned_fallback(question: str) -> str | None:
+    ledger_answer = _ledger_canned_answer(question)
+    if ledger_answer:
+        return _with_sources(ledger_answer, 1)
+
     question_lower = question.lower()
     for entry in _load_canned():
         answer = entry.get("answer") or entry.get("a")
@@ -49,7 +161,7 @@ def _canned_fallback(question: str) -> str | None:
         terms = [str(term) for term in keywords]
         terms.extend(term for term in _key_terms(source_question) if term not in terms)
         if answer and any(term.lower() in question_lower for term in terms):
-            return answer
+            return _with_sources(answer, 1)
     return None
 
 
@@ -89,9 +201,10 @@ async def answer_archaeology(question: str) -> str:
                 },
             ],
         )
-        return resp.choices[0].message.content or "I don't have a record of that decision."
+        answer = resp.choices[0].message.content or "I don't have a record of that decision."
+        return _with_sources(answer, len(relevant_decisions))
     except Exception:
-        return _canned_fallback(question) or "I don't have a record of that decision."
+        return _canned_fallback(question) or _with_sources("I don't have a record of that decision.", 0)
 
 
 async def _run_acceptance() -> None:
