@@ -24,8 +24,8 @@ export function NavBar() {
     >
       <div className="mx-auto grid w-full max-w-6xl grid-cols-[1fr_auto_1fr] items-center gap-4">
         <Link className="inline-flex items-center gap-2" href="/">
-          <span className="flex h-[34px] w-[34px] items-center justify-center rounded-[14px] bg-[linear-gradient(135deg,#7B6CF6,#00C896)] text-base shadow-[var(--shadow-violet)]">
-            🛡️
+          <span className="flex h-[34px] w-[34px] items-center justify-center rounded-[14px] bg-[linear-gradient(135deg,#7B6CF6,#00C896)] shadow-[var(--shadow-violet)] text-[15px] font-extrabold text-white tracking-tight">
+            C
           </span>
           <span className="text-base font-extrabold text-[var(--ink)]">
             Covenant
