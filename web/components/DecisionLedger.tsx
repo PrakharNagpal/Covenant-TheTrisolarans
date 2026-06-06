@@ -37,11 +37,7 @@ export function DecisionLedger() {
           setDecisions([]);
         }
       } finally {
-        window.setTimeout(() => {
-          if (!cancelled) {
-            setIsLoading(false);
-          }
-        }, 450);
+        if (!cancelled) setIsLoading(false);
       }
     }
 
@@ -126,13 +122,9 @@ export function DecisionLedger() {
               <SkeletonCard key={index} />
             ))
           ) : filteredDecisions.length > 0 ? (
-            <>
-              {filteredDecisions.map((decision, index) => (
-                <DecisionCard decision={decision} index={index} key={decision.id} />
-              ))}
-              <SkeletonCard />
-              <SkeletonCard />
-            </>
+            filteredDecisions.map((decision, index) => (
+              <DecisionCard decision={decision} index={index} key={decision.id} />
+            ))
           ) : (
             <div className="col-span-full">
               <EmptyState
