@@ -61,11 +61,7 @@ export function LineageView() {
           setLineage([]);
         }
       } finally {
-        window.setTimeout(() => {
-          if (!cancelled) {
-            setIsLoading(false);
-          }
-        }, 450);
+        if (!cancelled) setIsLoading(false);
       }
     }
 

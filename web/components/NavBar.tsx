@@ -8,6 +8,7 @@ const navLinks = [
   { href: "/", match: "/", emoji: "📚", label: "Decisions" },
   { href: "/archaeology", match: "/archaeology", emoji: "💬", label: "Archaeology" },
   { href: "/lineage?id=d1a2b3c4-0001-4000-a000-000000000001", match: "/lineage", emoji: "🔗", label: "Lineage" },
+  { href: "/system-design", match: "/system-design", emoji: "⚙️", label: "System" },
 ] as const;
 
 export function NavBar() {

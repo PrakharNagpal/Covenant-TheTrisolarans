@@ -4,6 +4,7 @@ import hmac
 import json
 import os
 import re
+import uuid
 from urllib.parse import parse_qs
 from datetime import datetime, timezone
 
@@ -16,6 +17,7 @@ from adapters.github import (
     post_pull_request_comment,
     verify_github_signature,
 )
+from adapters.linear import post_issue_comment
 from adapters.slack import (
     format_slack_overwrite_prompt,
     get_slack_user_name,
@@ -34,6 +36,7 @@ def _verify_linear_signature(payload_bytes: bytes, signature: str) -> bool:
     secret = os.getenv("LINEAR_WEBHOOK_SECRET", "")
     if not secret or not signature:
         return False
+    signature = signature.removeprefix("sha256=").strip()
     expected = hmac.new(secret.encode(), payload_bytes, hashlib.sha256).hexdigest()
     return hmac.compare_digest(signature, expected)
 
@@ -87,22 +90,157 @@ def format_pr_comment(contradiction: dict, sha: str, diff: str = "") -> str:
 [View in Covenant →]({COVENANT_URL}/decisions/{d.get("id", "")})"""
 
 
+def format_linear_contradiction_comment(contradiction: dict, new_text: str) -> str:
+    d = contradiction["decision"]
+    participants = ", ".join(d.get("participants", []))
+    date = _format_date(d.get("created_at"))
+    explanation = (
+        contradiction.get("explanation_detail")
+        or contradiction.get("contradiction_explanation")
+        or contradiction.get("explanation")
+        or "This appears to contradict an earlier decision."
+    )
+    return f"""## Covenant - Promise Check
+This Linear update may break a promise your team made.
+
+**Past decision** (made on **{date}** by {participants}):
+> {d.get("summary", "")}
+
+**Their reasoning:**
+> {d.get("rationale", "")}
+
+**New Linear update:**
+> {new_text}
+
+**Why I flagged it ({contradiction.get("severity", "unknown")}):**
+{explanation}
+
+[View in Covenant]({COVENANT_URL}/decisions/{d.get("id", "")})"""
+
+
+def _linear_issue_id(data: dict) -> str | None:
+    issue = data.get("issue")
+    if isinstance(issue, dict):
+        issue_id = issue.get("id")
+        if issue_id:
+            return issue_id
+    return data.get("issueId")
+
+
+def _linear_actor(data: dict) -> str:
+    actor = data.get("creator") or data.get("assignee") or {}
+    if isinstance(actor, dict):
+        return actor.get("name") or actor.get("displayName") or actor.get("email") or "Linear"
+    return "Linear"
+
+
+def _linear_issue_text(data: dict) -> str:
+    title = (data.get("title") or "").strip()
+    description = (data.get("description") or "").strip()
+    return "\n\n".join(part for part in [title, description] if part)
+
+
+async def _process_linear_decision_text(
+    text: str,
+    source_ref: str,
+    issue_id: str | None,
+    participant: str,
+    created_at: str | None,
+):
+    from agent.classifier import classify_decision
+    from agent.contradiction import find_contradictions
+
+    if not text:
+        print(f"[LINEAR WEBHOOK] empty text for {source_ref}; skipping", flush=True)
+        return
+
+    decisions = await db.get_all_decisions()
+    contradictions = _same_role_tool_contradictions(text, decisions)
+    classification = await classify_decision(text)
+    print(
+        f"[LINEAR WEBHOOK] classified {source_ref} as {classification.get('label')}",
+        flush=True,
+    )
+    if classification["label"] != "DECISION" and not contradictions:
+        return
+
+    existing = await db.get_decision_by_source_ref("linear", source_ref)
+    if existing:
+        print(f"[LINEAR WEBHOOK] already captured {source_ref}", flush=True)
+        return
+
+    if not contradictions:
+        contradictions = await find_contradictions(text, decisions)
+
+    new_decision = {
+        "id": str(uuid.uuid4()),
+        "summary": classification.get("extracted_choice") or text[:200],
+        "rationale": text,
+        "participants": [participant],
+        "source": "linear",
+        "source_ref": source_ref,
+        "created_at": created_at or datetime.now(timezone.utc).isoformat(),
+    }
+
+    if not contradictions:
+        await db.upsert_decision(new_decision)
+        print(
+            f"[LINEAR WEBHOOK] inserted {new_decision['id']} from {source_ref}",
+            flush=True,
+        )
+        return
+
+    existing_alert = await db.get_alert_by_source_ref("linear", source_ref)
+    if existing_alert:
+        print(f"[LINEAR WEBHOOK] already alerted for {source_ref}", flush=True)
+        return
+
+    top = contradictions[0]
+    await db.insert_alert(top, source_ref, "linear")
+    if not issue_id:
+        print("[LINEAR WEBHOOK] contradiction found but issue id missing", flush=True)
+        return
+
+    body = format_linear_contradiction_comment(top, text)
+    try:
+        comment_id = await post_issue_comment(issue_id, body)
+    except Exception as exc:
+        print(f"[LINEAR WEBHOOK] failed to post contradiction comment: {exc}", flush=True)
+        return
+    print(
+        f"[LINEAR WEBHOOK] posted contradiction comment {comment_id or ''}",
+        flush=True,
+    )
+
+
 def _parse_tool_role_decision(text: str) -> tuple[str, str] | None:
     normalized = " ".join(text.lower().strip().split())
-    # strip leading intent phrases so "we should use X as Y" → "X as Y"
     normalized = re.sub(
-        r"^(no[,\s]+)?(let'?s|we decided to|we will|we'll|we should|we're going to|"
+        r"^(no[,\s]+)?(let'?s|we decided to|we should|should|we will|we'll|"
         r"i am going to|we are going to|i want to|no i want to|going to|going with|"
         r"we're using|we are using|we use|we chose|we picked|we agreed on|"
-        r"we'll use|we need to use|we should use)\s+(use\s+)?",
+        r"we'll use|we need to use|we should use|we're going to)\s+(use\s+)?",
         "",
         normalized,
     )
-    # match "X as/for [our/the/a/an] Y" — article and preposition are flexible
-    match = re.match(r"(?P<tool>.+?)\s+(?:as|for)\s+(?:our\s+|the\s+|a\s+|an\s+)?(?P<role>.+)$", normalized)
-    if not match:
-        return None
-    return match.group("tool").strip(), match.group("role").strip()
+    normalized = re.sub(r"^(we|i)\s+", "", normalized)
+
+    patterns = [
+        r"^(?:decided to use|use|choose|chose|picked|select|selected)\s+(?P<tool>.+?)\s+(?:as|for)\s+(?:our|the|a|an)?\s*(?P<role>.+)$",
+        r"^(?P<tool>.+?)\s+(?:as|for)\s+(?:our\s+|the\s+|a\s+|an\s+)?(?P<role>.+)$",
+        r"^(?P<tool>.+?)\s+is\s+(?:our|the|a|an)\s+(?P<role>.+)$",
+    ]
+    for pattern in patterns:
+        match = re.match(pattern, normalized)
+        if not match:
+            continue
+        tool = match.group("tool").strip()
+        role = re.sub(r"\s+", " ", match.group("role").strip())
+        role = re.sub(r"^(?:our|the|a|an)\s+", "", role)
+        role = re.sub(r"\bagents\b", "agent", role)
+        role = re.sub(r"\bcoding assistant\b", "coding agent", role)
+        return tool, role
+    return None
 
 
 def _same_role_tool_contradictions(
@@ -124,7 +262,7 @@ def _same_role_tool_contradictions(
         old_tool, old_role = existing
         if old_role == role and old_tool != new_tool:
             print(
-                f"[SLACK DECISION] deterministic contradiction: {old_tool} vs {new_tool} for {role}",
+                f"[DECISION] deterministic contradiction: {old_tool} vs {new_tool} for {role}",
                 flush=True,
             )
             return [
@@ -272,6 +410,9 @@ async def process_slack_message(event: dict):
     import uuid
 
     text = event.get("text", "")
+    if "Covenant - Promise Check" in text:
+        print("[SLACK DECISION] skipping Covenant-authored message", flush=True)
+        return
     if await _handle_slack_text_approval(event):
         return
 
@@ -379,17 +520,36 @@ async def process_slack_interaction(payload: dict):
 
 
 async def process_linear_comment(data: dict):
-    from agent.classifier import classify_decision
-    from agent.contradiction import find_contradictions
-
     print(f"[LINEAR WEBHOOK] processing comment {data.get('id', '')}", flush=True)
     text = data.get("body", "")
-    classification = await classify_decision(text)
-    if classification["label"] == "DECISION":
-        decisions = await db.get_all_decisions()
-        contradictions = await find_contradictions(text, decisions)
-        if contradictions:
-            await db.insert_alert(contradictions[0], data.get("id"), "linear")
+    if "Covenant - Promise Check" in text:
+        print("[LINEAR WEBHOOK] skipping Covenant-authored comment", flush=True)
+        return
+
+    try:
+        await _process_linear_decision_text(
+            text=text,
+            source_ref=f"comment/{data.get('id', '')}",
+            issue_id=_linear_issue_id(data),
+            participant=_linear_actor(data),
+            created_at=data.get("createdAt") or data.get("created_at"),
+        )
+    except Exception as exc:
+        print(f"[LINEAR WEBHOOK] failed to process comment: {exc}", flush=True)
+
+
+async def process_linear_issue(data: dict):
+    print(f"[LINEAR WEBHOOK] processing issue {data.get('id', '')}", flush=True)
+    try:
+        await _process_linear_decision_text(
+            text=_linear_issue_text(data),
+            source_ref=f"issue/{data.get('id', '')}",
+            issue_id=data.get("id"),
+            participant=_linear_actor(data),
+            created_at=data.get("createdAt") or data.get("created_at"),
+        )
+    except Exception as exc:
+        print(f"[LINEAR WEBHOOK] failed to process issue: {exc}", flush=True)
 
 
 # ── routes ────────────────────────────────────────────────────────────────────
@@ -450,7 +610,14 @@ async def linear_webhook(req: Request, bg: BackgroundTasks):
     except json.JSONDecodeError as exc:
         raise HTTPException(status_code=400, detail="Invalid JSON payload") from exc
 
-    if payload.get("type") == "Comment" and payload.get("action") == "create":
-        print("[LINEAR WEBHOOK] comment create received", flush=True)
+    payload_type = (payload.get("type") or "").lower()
+    action = (payload.get("action") or "").lower()
+    print(f"[LINEAR WEBHOOK] received type={payload_type} action={action}", flush=True)
+
+    if payload_type == "comment" and action in {"create", "update"}:
+        print("[LINEAR WEBHOOK] comment create/update received", flush=True)
         bg.add_task(process_linear_comment, payload["data"])
+    if payload_type == "issue" and action in {"create", "update"}:
+        print("[LINEAR WEBHOOK] issue create/update received", flush=True)
+        bg.add_task(process_linear_issue, payload["data"])
     return {"ok": True}
