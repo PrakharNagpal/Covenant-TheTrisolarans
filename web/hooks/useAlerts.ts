@@ -14,6 +14,10 @@ export function useAlerts() {
     setLatestAlert(null);
   }, []);
 
+  const replayLatestAlert = useCallback(() => {
+    setLatestAlert((current) => current ?? alerts[0] ?? null);
+  }, [alerts]);
+
   useEffect(() => {
     let cancelled = false;
 
@@ -52,5 +56,5 @@ export function useAlerts() {
     };
   }, []);
 
-  return { alerts, latestAlert, dismissLatest };
+  return { alerts, latestAlert, dismissLatest, replayLatestAlert };
 }

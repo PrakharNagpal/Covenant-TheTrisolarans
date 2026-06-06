@@ -37,7 +37,27 @@ Thumbs.db
 *.swp
 *.swo
 
+# Virtual machines
+.vagrant/
+*.box
+*.ova
+*.ovf
+*.vdi
+*.vmdk
+*.vhd
+*.vhdx
+*.vmem
+*.vmsn
+*.vmss
+*.nvram
+*.vmx
+*.vmxf
+*.vmwarevm/
+VirtualBox VMs/
+Vagrantfile.local
+
 # Misc
+*.jsx
 *.log
 *.mp4
 covenant-backup-demo.mp4

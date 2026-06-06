@@ -1,200 +1,93 @@
-// Lane: P3 frontend
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import type { ReactNode } from "react";
-import Link from "next/link";
-import { AlertCircle, BookOpen, Database, Radio } from "lucide-react";
+import { useMemo, useState } from "react";
 import { AlertBanner } from "@/components/AlertBanner";
 import { DecisionCard } from "@/components/DecisionCard";
-import { useAlerts } from "@/hooks/useAlerts";
-import { getDecisions, type Decision } from "@/lib/api";
+import { Hero } from "@/components/Hero";
+import { LiveDemo } from "@/components/LiveDemo";
+import { SkeletonCard } from "@/components/SkeletonCard";
+import { Button } from "@/components/ui/Button";
+import { mockDecisions } from "@/lib/mock";
+
+const filters = ["All", "Slack", "Notion", "GitHub", "Linear"] as const;
 
 export default function DecisionLedgerPage() {
-  const [decisions, setDecisions] = useState<Decision[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [loadError, setLoadError] = useState<string | null>(null);
-  const { alerts, latestAlert, dismissLatest } = useAlerts();
+  const [activeFilter, setActiveFilter] = useState<(typeof filters)[number]>("All");
+  const [showAlert, setShowAlert] = useState(false);
 
-  useEffect(() => {
-    let cancelled = false;
-
-    async function loadDecisions() {
-      try {
-        const data = await getDecisions();
-        if (!cancelled) {
-          setDecisions(data);
-          setLoadError(null);
-        }
-      } catch (error) {
-        if (!cancelled) {
-          setLoadError(
-            error instanceof Error
-              ? error.message
-              : "Could not load decisions.",
-          );
-        }
-      } finally {
-        if (!cancelled) {
-          setIsLoading(false);
-        }
-      }
+  const decisions = useMemo(() => {
+    if (activeFilter === "All") {
+      return mockDecisions;
     }
 
-    loadDecisions();
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  const sourceCount = useMemo(
-    () => new Set(decisions.map((decision) => decision.source)).size,
-    [decisions],
-  );
-  const activeAlertIds = useMemo(
-    () => new Set(alerts.map((alert) => alert.decision_id)),
-    [alerts],
-  );
+    return mockDecisions.filter(
+      (decision) => decision.source.toLowerCase() === activeFilter.toLowerCase(),
+    );
+  }, [activeFilter]);
 
   return (
-    <main className="min-h-screen bg-[#F1EFE8] text-[#1B1A22]">
-      <AlertBanner alert={latestAlert} onDismiss={dismissLatest} />
-      <section className="mx-auto flex w-full max-w-7xl flex-col gap-8 px-6 py-8 sm:px-10">
-        <header className="flex flex-col gap-6 border-b border-[#D8D2C4] pb-7 lg:flex-row lg:items-end lg:justify-between">
-          <div className="max-w-3xl">
-            <p className="text-sm font-semibold uppercase tracking-wide text-[#0F6E56]">
-              Covenant
-            </p>
-            <h1 className="mt-2 text-3xl font-semibold text-[#534AB7] sm:text-4xl">
-              Decision Ledger
-            </h1>
-            <p className="mt-3 max-w-2xl text-base leading-7 text-[#5D5968]">
-              The live memory surface judges keep open: decisions, provenance,
-              and contradiction alerts in one scan-friendly view.
-            </p>
-          </div>
-          <Link
-            className="inline-flex w-fit items-center gap-2 rounded-lg bg-[#534AB7] px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-[#453DA0]"
-            href="/archaeology"
-          >
-            <BookOpen className="h-4 w-4" />
-            Archaeology
-          </Link>
+    <main className="min-h-screen bg-[var(--bg)] text-[var(--ink)]">
+      <Hero />
+      <LiveDemo />
+
+      <section className="mx-auto max-w-[860px] px-6 py-20" id="ledger">
+        <header className="mb-8 text-center">
+          <p className="text-[11px] font-extrabold uppercase tracking-[0.2em] text-[var(--mint)]">
+            Decision Ledger
+          </p>
+          <h1 className="mt-3 text-4xl font-extrabold tracking-[-0.02em] text-[var(--ink)]">
+            Team memory, ready for review
+          </h1>
+          <p className="mx-auto mt-3 max-w-xl text-sm font-medium leading-6 text-[var(--ink-3)]">
+            Filter the source trail, inspect past decisions, and simulate the promise check banner.
+          </p>
         </header>
 
-        <section className="grid gap-3 sm:grid-cols-3">
-          <StatTile
-            icon={<Database className="h-5 w-5" />}
-            label="Decisions"
-            value={isLoading ? "..." : String(decisions.length)}
-          />
-          <StatTile
-            icon={<AlertCircle className="h-5 w-5" />}
-            label="Alerts today"
-            value={String(alerts.length)}
-          />
-          <StatTile
-            icon={<Radio className="h-5 w-5" />}
-            label="Sources watching"
-            value={isLoading ? "..." : String(sourceCount)}
-          />
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex flex-wrap gap-2">
+            {filters.map((filter) => (
+              <Button
+                key={filter}
+                onClick={() => setActiveFilter(filter)}
+                size="sm"
+                variant={activeFilter === filter ? "primary" : "soft"}
+              >
+                {filter}
+              </Button>
+            ))}
+          </div>
+
+          <Button size="sm" variant="ghost">
+            🔍 Search
+          </Button>
+        </div>
+
+        {showAlert ? (
+          <div className="mt-5">
+            <AlertBanner onDismiss={() => setShowAlert(false)} />
+          </div>
+        ) : null}
+
+        <section
+          className="mt-5 grid gap-[14px]"
+          data-testid="decision-grid"
+          style={{
+            gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))",
+          }}
+        >
+          {decisions.map((decision, index) => (
+            <DecisionCard decision={decision} index={index} key={decision.id} />
+          ))}
+          <SkeletonCard />
+          <SkeletonCard />
         </section>
 
-        {isLoading ? (
-          <DecisionGridSkeleton />
-        ) : loadError ? (
-          <DashboardNotice
-            tone="error"
-            title="Backend is not returning decisions yet"
-            text={loadError}
-          />
-        ) : decisions.length === 0 ? (
-          <DashboardNotice
-            tone="neutral"
-            title="No decisions found"
-            text="Seed Supabase or flip mock mode back on to populate the ledger."
-          />
-        ) : (
-          <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-            {decisions.map((decision) => (
-              <DecisionCard
-                decision={decision}
-                isFlagged={activeAlertIds.has(decision.id)}
-                key={decision.id}
-              />
-            ))}
-          </section>
-        )}
+        <div className="mt-8 flex justify-center">
+          <Button onClick={() => setShowAlert(true)} variant="ghost">
+            Simulate alert ↑
+          </Button>
+        </div>
       </section>
     </main>
-  );
-}
-
-function DashboardNotice({
-  title,
-  text,
-  tone,
-}: {
-  title: string;
-  text: string;
-  tone: "error" | "neutral";
-}) {
-  const classes =
-    tone === "error"
-      ? "border-[#D85A30] bg-[#FFF0DD] text-[#8A2C12]"
-      : "border-[#D8D2C4] bg-white text-[#5D5968]";
-
-  return (
-    <section className={`rounded-lg border p-6 shadow-sm ${classes}`}>
-      <h2 className="text-lg font-semibold text-[#1B1A22]">{title}</h2>
-      <p className="mt-2 text-sm leading-6">{text}</p>
-    </section>
-  );
-}
-
-function StatTile({
-  icon,
-  label,
-  value,
-}: {
-  icon: ReactNode;
-  label: string;
-  value: string;
-}) {
-  return (
-    <div className="flex items-center gap-4 rounded-lg border border-[#D8D2C4] bg-white px-5 py-4 shadow-sm">
-      <span className="flex h-11 w-11 items-center justify-center rounded-lg bg-[#E8F3EE] text-[#0F6E56]">
-        {icon}
-      </span>
-      <span>
-        <span className="block text-2xl font-semibold text-[#1B1A22]">
-          {value}
-        </span>
-        <span className="text-sm font-medium text-[#5D5968]">{label}</span>
-      </span>
-    </div>
-  );
-}
-
-function DecisionGridSkeleton() {
-  return (
-    <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-      {Array.from({ length: 6 }).map((_, index) => (
-        <div
-          className="h-56 animate-pulse rounded-lg border border-[#D8D2C4] bg-white p-5 shadow-sm"
-          key={index}
-        >
-          <div className="h-5 w-3/4 rounded bg-[#E8E4D8]" />
-          <div className="mt-4 h-4 w-full rounded bg-[#EEE9DD]" />
-          <div className="mt-2 h-4 w-2/3 rounded bg-[#EEE9DD]" />
-          <div className="mt-8 h-px bg-[#EEE9DD]" />
-          <div className="mt-5 flex gap-2">
-            <div className="h-7 w-16 rounded-full bg-[#E8E4D8]" />
-            <div className="h-7 w-20 rounded-full bg-[#E8E4D8]" />
-          </div>
-        </div>
-      ))}
-    </section>
   );
 }
