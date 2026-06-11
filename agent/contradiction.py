@@ -111,6 +111,12 @@ _TOPIC_ANCHORS = {
     "rate_limit": {"limit", "rate", "req", "requests", "minute", "authenticated"},
     "redis": {"cache", "caching", "counter", "counters", "redis", "ephemeral"},
     "monorepo": {"monorepo", "polyrepo", "submodules", "workspaces", "repository"},
+    "budget": {"budget", "spend", "spending", "cost", "costs", "funding", "allocation", "capex", "opex", "revenue", "expense", "expenses", "salary", "compensation", "raise", "bonus"},
+    "headcount": {"hire", "hiring", "headcount", "recruit", "recruiting", "layoff", "layoffs", "team", "staff", "employee", "employees", "contractor", "contractors"},
+    "strategy": {"roadmap", "priority", "priorities", "milestone", "milestones", "deadline", "timeline", "launch", "target", "goal", "goals", "okr", "kpi"},
+    "vendor": {"vendor", "vendors", "supplier", "suppliers", "contract", "partnership", "outsource", "outsourcing", "agency"},
+    "policy": {"policy", "policies", "compliance", "regulation", "legal", "gdpr", "privacy", "data", "security", "audit"},
+    "vehicles": {"car", "cars", "vehicle", "vehicles", "fleet", "electric", "petrol", "diesel", "hybrid", "transport", "truck", "trucks"},
     "tooling": {
         "agent", "assistant", "claude", "codex", "coding", "copilot", "cursor",
         "devin", "ide", "language", "linter", "tool", "toolchain",
@@ -122,6 +128,9 @@ _TOPIC_ANCHORS = {
 
 _MIN_RELEVANCE_SCORE = 20  # 1 topic hit (20pts) is enough to reach GPT-4o
 _MAX_CANDIDATE_DECISIONS = 6
+# Below this decision count, skip topic filtering and send all decisions to GPT-4o.
+# Keeps the system useful for non-technical and business domains.
+_SMALL_SET_THRESHOLD = 40
 
 DETAIL_PROMPT = """Expand a contradiction explanation for a GitHub PR comment.
 
@@ -181,16 +190,20 @@ def _relevance_score(new_input: str, decision: dict) -> int:
 
 
 async def find_contradictions(new_input: str, decisions: list[dict]) -> list[dict]:
-    relevant_decisions = [
-        (decision, score)
-        for decision in decisions
-        if (score := _relevance_score(new_input, decision)) >= _MIN_RELEVANCE_SCORE
-    ]
-    relevant_decisions = sorted(
-        relevant_decisions,
-        key=lambda item: item[1],
-        reverse=True,
-    )[:_MAX_CANDIDATE_DECISIONS]
+    if len(decisions) <= _SMALL_SET_THRESHOLD:
+        # Small set: check every decision directly — no topic filtering needed.
+        relevant_decisions = [(d, 100) for d in decisions]
+    else:
+        relevant_decisions = [
+            (decision, score)
+            for decision in decisions
+            if (score := _relevance_score(new_input, decision)) >= _MIN_RELEVANCE_SCORE
+        ]
+        relevant_decisions = sorted(
+            relevant_decisions,
+            key=lambda item: item[1],
+            reverse=True,
+        )[:_MAX_CANDIDATE_DECISIONS]
 
     async def check_decision(decision: dict, relevance_score: int) -> dict | None:
         user_message = f"PAST_DECISION: {json.dumps(decision)}\n\nNEW_INPUT: {new_input}"
