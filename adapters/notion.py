@@ -55,13 +55,60 @@ async def poll_notion_once() -> int:
     return len(decisions)
 
 
+async def poll_meeting_pages_once() -> None:
+    """Check each page in NOTION_WATCHED_PAGES for contradictions and post callouts."""
+    from agent.contradiction import find_contradictions
+    from api.routes.webhooks import format_notion_contradiction_comment
+
+    raw = os.getenv("NOTION_WATCHED_PAGES", "").strip()
+    if not raw:
+        return
+
+    page_ids = [p.strip() for p in raw.split(",") if p.strip()]
+    decisions = await db.get_all_decisions()
+
+    for page_id in page_ids:
+        try:
+            text = await get_page_text(page_id)
+        except Exception as exc:
+            print(f"[NOTION PAGE POLLER] failed to fetch {page_id}: {exc}", flush=True)
+            continue
+
+        if not text.strip():
+            continue
+
+        contradictions = await find_contradictions(text, decisions)
+        if not contradictions:
+            continue
+
+        top = contradictions[0]
+        decision_id = (top.get("decision") or {}).get("id", "")
+        source_ref = f"notion/{page_id}/{decision_id}"
+
+        existing = await db.get_alert_by_source_ref("notion", source_ref)
+        if existing:
+            continue
+
+        await db.insert_alert(top, source_ref, "notion")
+        message = format_notion_contradiction_comment(top)
+        try:
+            await append_contradiction_callout(page_id, message)
+            print(f"[NOTION PAGE POLLER] posted callout on {page_id}", flush=True)
+        except Exception as exc:
+            print(f"[NOTION PAGE POLLER] failed to post callout on {page_id}: {exc}", flush=True)
+
+
 async def notion_poller():
     while True:
         try:
             await poll_notion_once()
         except Exception as exc:
             print(f"[NOTION POLLER] error: {exc}", flush=True)
-        await asyncio.sleep(60)
+        try:
+            await poll_meeting_pages_once()
+        except Exception as exc:
+            print(f"[NOTION PAGE POLLER] error: {exc}", flush=True)
+        await asyncio.sleep(30)
 
 
 _TEXT_BLOCK_TYPES = {
