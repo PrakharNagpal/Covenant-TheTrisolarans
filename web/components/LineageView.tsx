@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import type { Decision, LineageLink } from "@/lib/api";
-import { getDecision, getLineage } from "@/lib/api";
+import { getDecision, getDecisions, getLineage } from "@/lib/api";
 import { SourceBadge } from "@/components/DecisionCard";
 import { EmptyState } from "@/components/EmptyState";
 import { Button } from "@/components/ui/Button";
@@ -41,7 +41,7 @@ function isUrl(value: string) {
 
 export function LineageView() {
   const searchParams = useSearchParams();
-  const id = searchParams.get("id") ?? "d1a2b3c4-0001-4000-a000-000000000001";
+  const requestedId = searchParams.get("id");
   const [decision, setDecision] = useState<Decision | null>(null);
   const [lineage, setLineage] = useState<LineageLink[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -55,9 +55,19 @@ export function LineageView() {
       setError(null);
 
       try {
+        let activeId = requestedId;
+        if (!activeId) {
+          const decisions = await getDecisions();
+          activeId = decisions[0]?.id;
+        }
+
+        if (!activeId) {
+          throw new Error("No decisions are available yet.");
+        }
+
         const [nextDecision, nextLineage] = await Promise.all([
-          getDecision(id),
-          getLineage(id),
+          getDecision(activeId),
+          getLineage(activeId),
         ]);
 
         if (!cancelled) {
@@ -84,7 +94,7 @@ export function LineageView() {
     return () => {
       cancelled = true;
     };
-  }, [id]);
+  }, [requestedId]);
 
   const accent = useMemo(
     () => sourceAccents[decision?.source.toLowerCase() ?? ""] ?? tokens.colors.violet,

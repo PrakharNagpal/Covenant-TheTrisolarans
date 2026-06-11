@@ -396,7 +396,7 @@ async def get_decision(decision_id: str) -> dict | None:
         .maybe_single()
         .execute()
     )
-    return result.data
+    return result.data if result else None
 
 
 async def get_lineage(decision_id: str) -> list[dict]:
