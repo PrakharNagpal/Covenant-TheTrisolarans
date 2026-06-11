@@ -61,9 +61,107 @@ function decisionTitle(decision: Decision) {
   return summary;
 }
 
-export function LineageView() {
-  const searchParams = useSearchParams();
-  const requestedId = searchParams.get("id");
+function accent(source: string) {
+  return sourceAccents[source.toLowerCase()] ?? tokens.colors.violet;
+}
+
+// ── Topics list (no ?id) ──────────────────────────────────────────────────────
+
+function TopicsList() {
+  const [decisions, setDecisions] = useState<Decision[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    getDecisions()
+      .then((d) => { if (!cancelled) { setDecisions(d); setIsLoading(false); } })
+      .catch(() => { if (!cancelled) setIsLoading(false); });
+    return () => { cancelled = true; };
+  }, []);
+
+  return (
+    <main className="min-h-[calc(100vh-56px)] bg-[var(--app-bg)] px-6 py-8 text-[var(--ink)]">
+      <section className="mx-auto max-w-[860px]">
+        <div className="mb-6">
+          <Link href="/">
+            <Button size="sm" variant="ghost">← Back to Ledger</Button>
+          </Link>
+        </div>
+
+        <p className="mb-1 text-[11px] font-extrabold uppercase tracking-[0.16em] text-[var(--ink-4)]">
+          Decision Lineage
+        </p>
+        <h1 className="mb-6 text-2xl font-extrabold tracking-[-0.5px] text-[var(--ink)]">
+          Choose a decision to inspect
+        </h1>
+
+        {isLoading ? (
+          <div className="flex flex-col gap-3">
+            {[0, 1, 2, 3].map((i) => (
+              <div
+                key={i}
+                className="h-16 animate-pulse rounded-[14px] bg-[var(--muted)]"
+                style={{ animationDelay: `${i * 0.08}s` }}
+              />
+            ))}
+          </div>
+        ) : decisions.length === 0 ? (
+          <EmptyState
+            icon="🔗"
+            title="No decisions yet"
+            subtitle="Decisions appear here once Covenant starts tracking them."
+          />
+        ) : (
+          <div className="flex flex-col gap-2">
+            {decisions.map((decision, index) => (
+              <TopicRow key={decision.id} decision={decision} index={index} />
+            ))}
+          </div>
+        )}
+      </section>
+    </main>
+  );
+}
+
+function TopicRow({ decision, index }: { decision: Decision; index: number }) {
+  const [hovered, setHovered] = useState(false);
+  const color = accent(decision.source);
+
+  return (
+    <Link href={`/lineage?id=${encodeURIComponent(decision.id)}`}>
+      <div
+        className="flex items-center gap-4 overflow-hidden bg-[var(--panel)] px-4 py-3.5 transition-all"
+        onMouseEnter={() => setHovered(true)}
+        onMouseLeave={() => setHovered(false)}
+        style={{
+          animation: `fadeUp .4s ${index * 0.05}s ease both`,
+          animationFillMode: "forwards",
+          border: `1.5px solid ${hovered ? `${color}55` : "#E8E8F0"}`,
+          borderRadius: "14px",
+          boxShadow: hovered ? tokens.shadow.sm : "none",
+          opacity: 0,
+        }}
+      >
+        <div
+          className="h-8 w-1 shrink-0 rounded-full"
+          style={{ background: color }}
+        />
+        <p className="min-w-0 flex-1 truncate text-sm font-semibold text-[var(--ink)]">
+          {decisionTitle(decision)}
+        </p>
+        <div className="flex shrink-0 items-center gap-2">
+          <span className="text-[11px] font-medium text-[var(--ink-4)]">{decision.date}</span>
+          <SourceBadge source={decision.source} />
+        </div>
+        <span className="shrink-0 text-[var(--ink-4)]">→</span>
+      </div>
+    </Link>
+  );
+}
+
+// ── Detail view (?id set) ─────────────────────────────────────────────────────
+
+function DetailView({ id }: { id: string }) {
   const [decision, setDecision] = useState<Decision | null>(null);
   const [lineage, setLineage] = useState<LineageLink[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -71,55 +169,23 @@ export function LineageView() {
 
   useEffect(() => {
     let cancelled = false;
+    setIsLoading(true);
+    setError(null);
 
-    async function loadLineage() {
-      setIsLoading(true);
-      setError(null);
+    Promise.all([getDecision(id), getLineage(id)])
+      .then(([d, l]) => {
+        if (!cancelled) { setDecision(d); setLineage(l); }
+      })
+      .catch((err) => {
+        if (!cancelled) setError(err instanceof Error ? err.message : "Could not load lineage.");
+      })
+      .finally(() => { if (!cancelled) setIsLoading(false); });
 
-      try {
-        let activeId = requestedId;
-        if (!activeId) {
-          const decisions = await getDecisions();
-          activeId = decisions[0]?.id;
-        }
+    return () => { cancelled = true; };
+  }, [id]);
 
-        if (!activeId) {
-          throw new Error("No decisions are available yet.");
-        }
-
-        const [nextDecision, nextLineage] = await Promise.all([
-          getDecision(activeId),
-          getLineage(activeId),
-        ]);
-
-        if (!cancelled) {
-          setDecision(nextDecision);
-          setLineage(nextLineage);
-        }
-      } catch (loadError) {
-        if (!cancelled) {
-          setError(
-            loadError instanceof Error
-              ? loadError.message
-              : "Could not load this decision lineage.",
-          );
-          setDecision(null);
-          setLineage([]);
-        }
-      } finally {
-        if (!cancelled) setIsLoading(false);
-      }
-    }
-
-    loadLineage();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [requestedId]);
-
-  const accent = useMemo(
-    () => sourceAccents[decision?.source.toLowerCase() ?? ""] ?? tokens.colors.violet,
+  const color = useMemo(
+    () => accent(decision?.source ?? ""),
     [decision],
   );
 
@@ -127,25 +193,20 @@ export function LineageView() {
     <main className="min-h-[calc(100vh-56px)] bg-[var(--app-bg)] px-6 py-6 text-[var(--ink)] sm:py-8">
       <section className="mx-auto flex max-w-[860px] flex-col gap-3">
         <div>
-          <Link href="/">
-            <Button size="sm" variant="ghost">
-              ← Back to Ledger
-            </Button>
+          <Link href="/lineage">
+            <Button size="sm" variant="ghost">← All decisions</Button>
           </Link>
         </div>
 
         <article
           className="relative overflow-hidden bg-[var(--panel)] px-5 py-4 sm:px-6 sm:py-5"
           data-testid="decision-detail-card"
-          style={{
-            border: "1.5px solid #E8E8F0",
-            borderRadius: "18px",
-          }}
+          style={{ border: "1.5px solid #E8E8F0", borderRadius: "18px" }}
         >
           <div
             aria-hidden="true"
             className="absolute bottom-5 left-0 top-5 w-[3px] rounded-[99px]"
-            style={{ background: accent }}
+            style={{ background: color }}
           />
 
           {isLoading ? (
@@ -155,9 +216,7 @@ export function LineageView() {
               <h1 className="text-[22px] font-extrabold tracking-[-0.5px] text-[var(--ink)]">
                 Lineage unavailable
               </h1>
-              <p className="mt-2 text-sm leading-[1.65] text-[var(--coral)]">
-                {error}
-              </p>
+              <p className="mt-2 text-sm leading-[1.65] text-[var(--coral)]">{error}</p>
             </div>
           ) : decision ? (
             <>
@@ -179,8 +238,8 @@ export function LineageView() {
                 <span className="text-[10px] font-extrabold uppercase tracking-[0.16em] text-[var(--ink-4)]">
                   By
                 </span>
-                {decision.participants.map((participant) => (
-                  <Pill key={participant} username={participant} />
+                {decision.participants.map((p) => (
+                  <Pill key={p} username={p} />
                 ))}
                 <Tag color={tokens.colors.ink3} bg={tokens.colors.muted}>
                   {decision.date}
@@ -194,9 +253,7 @@ export function LineageView() {
         <div
           aria-hidden="true"
           className="h-px w-full"
-          style={{
-            background: "linear-gradient(90deg, transparent, #E8E8F0, transparent)",
-          }}
+          style={{ background: "linear-gradient(90deg, transparent, #E8E8F0, transparent)" }}
         />
 
         <section>
@@ -229,25 +286,27 @@ export function LineageView() {
   );
 }
 
-function ArtifactRow({
-  artifact,
-  isLast,
-}: {
-  artifact: LineageLink;
-  isLast: boolean;
-}) {
+// ── Root export ───────────────────────────────────────────────────────────────
+
+export function LineageView() {
+  const searchParams = useSearchParams();
+  const id = searchParams.get("id");
+
+  if (!id) return <TopicsList />;
+  return <DetailView id={id} />;
+}
+
+// ── Shared sub-components ─────────────────────────────────────────────────────
+
+function ArtifactRow({ artifact, isLast }: { artifact: LineageLink; isLast: boolean }) {
   const normalizedType = artifact.type.toLowerCase();
-  const targetContent = (
-    <span className="truncate">{artifact.target}</span>
-  );
+  const targetContent = <span className="truncate">{artifact.target}</span>;
 
   return (
     <div
       className="flex items-center gap-3 py-2.5"
       data-testid="artifact-row"
-      style={{
-        borderBottom: isLast ? "none" : "1.5px solid #F5F5F7",
-      }}
+      style={{ borderBottom: isLast ? "none" : "1.5px solid #F5F5F7" }}
     >
       <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] bg-[var(--violet-lt)] text-sm">
         {artifactIcons[normalizedType] ?? "📄"}
