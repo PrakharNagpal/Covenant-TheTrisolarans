@@ -1,0 +1,47 @@
+services:
+  - type: web
+    name: covenant-api
+    runtime: python
+    plan: free
+    healthCheckPath: /health
+    buildCommand: python -m pip install --upgrade pip setuptools wheel uv && uv pip install --python "$(which python)" -r requirements.txt || python -m pip install --default-timeout=120 --retries 10 -r requirements.txt
+    startCommand: uvicorn api.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: MODE
+        value: LIVE
+      - key: GITHUB_MODE
+        value: LIVE
+      - key: SLACK_MODE
+        value: LIVE
+      - key: LINEAR_MODE
+        value: LIVE
+      - key: NOTION_MODE
+        value: LIVE
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_KEY
+        sync: false
+      - key: GITHUB_TOKEN
+        sync: false
+      - key: GITHUB_REPO
+        sync: false
+      - key: GITHUB_WEBHOOK_SECRET
+        sync: false
+      - key: SLACK_BOT_TOKEN
+        sync: false
+      - key: SLACK_CHANNEL_ID
+        sync: false
+      - key: NOTION_TOKEN
+        sync: false
+      - key: NOTION_DATABASE_ID
+        sync: false
+      - key: LINEAR_API_KEY
+        sync: false
+      - key: LINEAR_WEBHOOK_SECRET
+        sync: false
+      - key: NGROK_URL
+        sync: false
