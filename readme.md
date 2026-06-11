@@ -233,6 +233,7 @@ NOTION_DATABASE_ID=...
 
 # Linear (optional)
 LINEAR_WEBHOOK_SECRET=...
+LINEAR_WORKSPACE_URL=https://linear.app/your-workspace
 
 # Demo mode (skip OpenAI calls for known demo commits)
 MODE=DEMO

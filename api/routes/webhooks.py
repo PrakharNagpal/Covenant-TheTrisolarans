@@ -208,6 +208,42 @@ def _linear_issue_text(data: dict) -> str:
     description = (data.get("description") or "").strip()
     return "\n\n".join(part for part in [title, description] if part)
 
+
+def _linear_issue_identifier(data: dict) -> str | None:
+    issue = data.get("issue")
+    if isinstance(issue, dict):
+        identifier = issue.get("identifier")
+        if identifier:
+            return identifier
+    return data.get("identifier")
+
+
+def _linear_issue_url(data: dict) -> str | None:
+    issue = data.get("issue")
+    if isinstance(issue, dict):
+        issue_url = issue.get("url")
+        if issue_url:
+            return issue_url
+
+    identifier = _linear_issue_identifier(data)
+    workspace_url = os.getenv("LINEAR_WORKSPACE_URL", "").rstrip("/")
+    if workspace_url and identifier:
+        return f"{workspace_url}/issue/{identifier}"
+    return None
+
+
+def _linear_source_ref(data: dict, fallback_kind: str) -> str:
+    direct_url = data.get("url") or data.get("appUrl")
+    if direct_url:
+        return direct_url
+
+    issue_url = _linear_issue_url(data)
+    if issue_url:
+        return issue_url
+
+    return f"{fallback_kind}/{data.get('id', '')}"
+
+
 async def _process_linear_decision_text(
     text: str,
     source_ref: str,
@@ -613,7 +649,7 @@ async def process_linear_comment(data: dict):
         return
 
     try:
-        source_ref = data.get("url") or f"comment/{data.get('id', '')}"
+        source_ref = _linear_source_ref(data, "comment")
         await _process_linear_decision_text(
             text=text,
             source_ref=source_ref,
@@ -628,7 +664,7 @@ async def process_linear_comment(data: dict):
 async def process_linear_issue(data: dict):
     print(f"[LINEAR WEBHOOK] processing issue {data.get('id', '')}", flush=True)
     try:
-        source_ref = data.get("url") or f"issue/{data.get('id', '')}"
+        source_ref = _linear_source_ref(data, "issue")
         await _process_linear_decision_text(
             text=_linear_issue_text(data),
             source_ref=source_ref,

@@ -44,6 +44,23 @@ function isUrl(value: string) {
   return /^https?:\/\//.test(value);
 }
 
+function looksLikeRawValue(value: string) {
+  return (
+    isUrl(value) ||
+    /^[a-z]+\/[a-z0-9._-]+$/i.test(value) ||
+    /^[0-9a-f]{8}-[0-9a-f-]{27,}$/i.test(value) ||
+    value.length > 220
+  );
+}
+
+function decisionTitle(decision: Decision) {
+  const summary = decision.summary.trim();
+  if (!summary || summary === "Untitled decision" || looksLikeRawValue(summary)) {
+    return `Decision recorded from ${decision.source}`;
+  }
+  return summary;
+}
+
 export function LineageView() {
   const searchParams = useSearchParams();
   const requestedId = searchParams.get("id");
@@ -144,13 +161,24 @@ export function LineageView() {
             </div>
           ) : decision ? (
             <>
-              <h1 className="mb-1.5 text-xl font-extrabold leading-tight tracking-[-0.5px] text-[var(--ink)]">
-                {decision.summary}
-              </h1>
-              <p className="mb-3 line-clamp-4 text-sm font-medium leading-[1.55] text-[var(--ink-3)]">
-                {decision.rationale ?? "No rationale has been recorded yet."}
+              <p className="mb-1 text-[11px] font-extrabold uppercase tracking-[0.16em] text-[var(--ink-4)]">
+                Decision Made
               </p>
-              <div className="flex flex-wrap items-center gap-2">
+              <h1 className="text-xl font-extrabold leading-tight tracking-[-0.5px] text-[var(--ink)]">
+                {decisionTitle(decision)}
+              </h1>
+              <div className="mt-3 rounded-[10px] border border-[#F0F0F5] bg-[var(--muted)] px-3 py-2">
+                <p className="text-[10px] font-extrabold uppercase tracking-[0.16em] text-[var(--ink-4)]">
+                  Justification
+                </p>
+                <p className="mt-1 line-clamp-4 text-sm font-medium leading-[1.55] text-[var(--ink-3)]">
+                  {decision.rationale ?? "No justification has been recorded yet."}
+                </p>
+              </div>
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                <span className="text-[10px] font-extrabold uppercase tracking-[0.16em] text-[var(--ink-4)]">
+                  By
+                </span>
                 {decision.participants.map((participant) => (
                   <Pill key={participant} username={participant} />
                 ))}
