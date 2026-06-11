@@ -69,7 +69,7 @@ async def poll_meeting_pages_once() -> None:
 
     for page_id in page_ids:
         try:
-            text = await get_page_text(page_id)
+            text, blocks = await get_page_text(page_id)
         except Exception as exc:
             print(f"[NOTION PAGE POLLER] failed to fetch {page_id}: {exc}", flush=True)
             continue
@@ -83,14 +83,13 @@ async def poll_meeting_pages_once() -> None:
 
         top = contradictions[0]
         decision_id = (top.get("decision") or {}).get("id", "")
-        # Include a short hash of the page text so new content produces a new key
-        text_hash = hashlib.sha256(text.encode()).hexdigest()[:12]
-        source_ref = f"notion/{page_id}/{decision_id}/{text_hash}"
 
-        existing = await db.get_alert_by_source_ref("notion", source_ref)
-        if existing:
+        # Skip only if our callout is already visible on the page for this decision.
+        # This means the user can trigger a fresh callout by deleting the old one.
+        if _covenant_callout_present(blocks, decision_id):
             continue
 
+        source_ref = f"notion/{page_id}/{decision_id}"
         await db.insert_alert(top, source_ref, "notion")
         message = format_notion_contradiction_comment(top)
         try:
@@ -126,11 +125,27 @@ _TEXT_BLOCK_TYPES = {
 }
 
 
-async def get_page_text(page_id: str) -> str:
+async def get_page_blocks(page_id: str) -> list[dict]:
     notion = NotionClient(auth=os.getenv("NOTION_TOKEN", ""))
     response = await notion.blocks.children.list(block_id=page_id)
+    return response.get("results", [])
+
+
+def _covenant_callout_present(blocks: list[dict], decision_id: str) -> bool:
+    """Return True if the page already has a Covenant callout for this decision."""
+    for block in blocks:
+        if block.get("type") != "callout":
+            continue
+        callout_text = _plain_text(block.get("callout", {}).get("rich_text"))
+        if "Covenant" in callout_text and decision_id in callout_text:
+            return True
+    return False
+
+
+async def get_page_text(page_id: str) -> tuple[str, list[dict]]:
+    blocks = await get_page_blocks(page_id)
     texts = []
-    for block in response.get("results", []):
+    for block in blocks:
         block_type = block.get("type")
         if block_type not in _TEXT_BLOCK_TYPES:
             continue
@@ -138,7 +153,7 @@ async def get_page_text(page_id: str) -> str:
         text = _plain_text(content.get("rich_text"))
         if text:
             texts.append(text)
-    return "\n".join(texts)
+    return "\n".join(texts), blocks
 
 
 async def append_contradiction_callout(page_id: str, message: str) -> None:

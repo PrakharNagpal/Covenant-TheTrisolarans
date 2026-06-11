@@ -29,8 +29,10 @@ async def check_notion_page(req: NotionPageCheckRequest):
     from adapters.notion import get_page_text, append_contradiction_callout
     from api.routes.webhooks import format_notion_contradiction_comment
 
+    from adapters.notion import _covenant_callout_present
+
     try:
-        text = await get_page_text(req.page_id)
+        text, blocks = await get_page_text(req.page_id)
     except Exception as exc:
         raise HTTPException(status_code=400, detail=f"Failed to fetch page: {exc}")
 
@@ -42,6 +44,9 @@ async def check_notion_page(req: NotionPageCheckRequest):
 
     callout_posted = False
     if contradictions:
+        decision_id = (contradictions[0].get("decision") or {}).get("id", "")
+        if _covenant_callout_present(blocks, decision_id):
+            return {"text": text, "contradictions": contradictions, "callout_posted": False, "note": "callout already on page"}
         message = format_notion_contradiction_comment(contradictions[0])
         try:
             await append_contradiction_callout(req.page_id, message)

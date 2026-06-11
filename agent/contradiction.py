@@ -102,7 +102,7 @@ _STOPWORDS = {
 
 _TOPIC_ANCHORS = {
     "auth": {"auth", "authentication", "jwt", "session", "sessions", "token", "tokens", "cookie", "cookies", "bearer", "login", "logout", "password", "revocation"},
-    "database": {"acid", "database", "db", "dynamodb", "jsonb", "mongo", "mongodb", "mysql", "postgres", "postgresql", "relational"},
+    "database": {"acid", "database", "db", "dynamodb", "jsonb", "mongo", "mongodb", "mysql", "postgres", "postgresql", "relational", "sql"},
     "checkout": {"cart", "checkout", "delivery", "flow", "payment", "step", "steps"},
     "pii": {"address", "email", "orders", "pdpa", "pii", "user_id", "retention"},
     "deployment": {"aws", "cloudfront", "deploy", "deployment", "ec2", "ecs", "fly", "railway", "vercel"},

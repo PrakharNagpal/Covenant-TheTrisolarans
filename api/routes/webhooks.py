@@ -663,6 +663,7 @@ def format_notion_contradiction_comment(contradiction: dict) -> str:
 
 
 async def process_notion_page(page_id: str):
+    from agent.classifier import classify_decision
     from agent.contradiction import find_contradictions
     from adapters.notion import get_page_text, append_contradiction_callout
 
@@ -676,8 +677,33 @@ async def process_notion_page(page_id: str):
         print(f"[NOTION WEBHOOK] empty page {page_id}; skipping", flush=True)
         return
 
+    source_ref = f"https://www.notion.so/{page_id.replace('-', '')}"
+    classification = await classify_decision(text)
+    print(
+        f"[NOTION WEBHOOK] classified {page_id} as {classification.get('label')}",
+        flush=True,
+    )
+
     decisions = await db.get_all_decisions()
     contradictions = await find_contradictions(text, decisions)
+
+    if classification.get("label") == "DECISION":
+        existing = await db.get_decision_by_source_ref("notion", source_ref)
+        if existing:
+            print(f"[NOTION WEBHOOK] already captured {source_ref}", flush=True)
+        elif not contradictions:
+            await db.upsert_decision(
+                {
+                    "id": str(uuid.uuid4()),
+                    "summary": classification.get("extracted_choice") or text[:200],
+                    "rationale": text,
+                    "participants": ["Notion"],
+                    "source": "notion",
+                    "source_ref": source_ref,
+                    "created_at": datetime.now(timezone.utc).isoformat(),
+                }
+            )
+            print(f"[NOTION WEBHOOK] inserted decision from {source_ref}", flush=True)
 
     if not contradictions:
         print(f"[NOTION WEBHOOK] no contradictions for page {page_id}", flush=True)

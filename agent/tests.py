@@ -21,6 +21,7 @@ def _print_result(name: str, passed: bool, detail: str) -> bool:
 async def _run_classifier_cases() -> list[bool]:
     cases = [
         ("classifier JWT decision", "Let's go with JWT — stateless, works for mobile", "DECISION", lambda r: r.get("confidence", 0) > 0.8),
+        ("classifier bare SQL directive", "use SQL for database", "DECISION", lambda r: r.get("extracted_choice") == "SQL for database"),
         ("classifier JWT discussion", "Should we use JWT or sessions?", "DISCUSSION", lambda r: True),
         ("classifier lunch noise", "Lunch anyone?", "NOISE", lambda r: True),
         ("classifier Postgres decision", "We're going with Postgres over MongoDB", "DECISION", lambda r: True),
