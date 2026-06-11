@@ -20,10 +20,24 @@ const sourceAccents: Record<string, string> = {
 };
 
 const artifactIcons: Record<string, string> = {
+  code: "⌘",
+  commit: "⑂",
   file: "📄",
+  github_commit: "⑂",
+  github_pr: "⑃",
+  issue: "▣",
   package: "📦",
+  pr: "⑃",
   route: "🔀",
 };
+
+function artifactLabel(type: string) {
+  return type.replace(/_/g, " ");
+}
+
+function isUrl(value: string) {
+  return /^https?:\/\//.test(value);
+}
 
 export function LineageView() {
   const searchParams = useSearchParams();
@@ -180,6 +194,9 @@ function ArtifactRow({
   isLast: boolean;
 }) {
   const normalizedType = artifact.type.toLowerCase();
+  const targetContent = (
+    <span className="truncate">{artifact.target}</span>
+  );
 
   return (
     <div
@@ -194,16 +211,27 @@ function ArtifactRow({
       </span>
 
       <div className="min-w-0 flex-1">
-        <span className="inline-flex max-w-full rounded-[5px] bg-[var(--violet-lt)] px-1.5 py-0.5 font-mono text-[11px] font-extrabold text-[var(--violet)]">
-          <span className="truncate">{artifact.target}</span>
-        </span>
+        {isUrl(artifact.target) ? (
+          <a
+            className="inline-flex max-w-full rounded-[5px] bg-[var(--violet-lt)] px-1.5 py-0.5 font-mono text-[11px] font-extrabold text-[var(--violet)] underline-offset-2 hover:underline"
+            href={artifact.target}
+            rel="noreferrer"
+            target="_blank"
+          >
+            {targetContent}
+          </a>
+        ) : (
+          <span className="inline-flex max-w-full rounded-[5px] bg-[var(--violet-lt)] px-1.5 py-0.5 font-mono text-[11px] font-extrabold text-[var(--violet)]">
+            {targetContent}
+          </span>
+        )}
         <p className="mt-0.5 text-[11px] font-medium leading-5 text-[var(--ink-3)]">
           {artifact.note ?? "No note recorded."}
         </p>
       </div>
 
       <Tag color={tokens.colors.violet} bg={tokens.colors.violetLt}>
-        {normalizedType}
+        {artifactLabel(normalizedType)}
       </Tag>
     </div>
   );

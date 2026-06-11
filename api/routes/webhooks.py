@@ -70,6 +70,75 @@ def _summarize_diff(diff: str, contradiction: dict) -> str:
     return "This commit changes code related to the flagged decision."
 
 
+def _github_file_line_refs(diff: str) -> list[tuple[str, str | None]]:
+    refs: list[tuple[str, str | None]] = []
+    current_file: str | None = None
+
+    for line in diff.splitlines():
+        if line.startswith("File: "):
+            current_file = line.removeprefix("File: ").strip()
+            refs.append((current_file, None))
+            continue
+
+        if not current_file or not line.startswith("@@"):
+            continue
+
+        match = re.search(r"\+(\d+)(?:,(\d+))?", line)
+        if not match:
+            continue
+
+        start = int(match.group(1))
+        count = int(match.group(2) or "1")
+        end = start + max(count - 1, 0)
+        line_ref = f"{current_file}:{start}" if start == end else f"{current_file}:{start}-{end}"
+        refs.append((current_file, line_ref))
+
+    deduped: list[tuple[str, str | None]] = []
+    seen: set[tuple[str, str | None]] = set()
+    for item in refs:
+        if item in seen:
+            continue
+        seen.add(item)
+        deduped.append(item)
+    return deduped
+
+
+async def _record_github_lineage(
+    contradiction: dict,
+    diff: str,
+    primary_ref: str,
+    primary_type: str,
+    context: str,
+):
+    decision = contradiction.get("decision") or {}
+    decision_id = decision.get("id") or contradiction.get("decision_id")
+    if not decision_id:
+        return
+
+    links = [
+        {
+            "artifact_type": primary_type,
+            "artifact_ref": primary_ref,
+            "note": context,
+        }
+    ]
+
+    for file_path, line_ref in _github_file_line_refs(diff):
+        links.append(
+            {
+                "artifact_type": "code",
+                "artifact_ref": line_ref or file_path,
+                "note": (
+                    f"Changed lines from {context}"
+                    if line_ref
+                    else f"Changed file from {context}"
+                ),
+            }
+        )
+
+    await db.insert_lineage_links(decision_id, links)
+
+
 def format_pr_comment(contradiction: dict, sha: str, diff: str = "") -> str:
     d = contradiction["decision"]
     participants = ", ".join(d.get("participants", []))
@@ -348,6 +417,18 @@ async def process_push(payload: dict):
         body = format_pr_comment(top, sha, diff)
         await post_commit_comment(sha, body)
         await db.insert_alert(top, sha, "commit")
+        commit_ref = (
+            f"https://github.com/{repo}/commit/{sha}"
+            if repo
+            else sha
+        )
+        await _record_github_lineage(
+            top,
+            diff,
+            commit_ref,
+            "github_commit",
+            f"GitHub commit {sha[:7]}",
+        )
         print(f"[GITHUB PUSH] posted commit comment on {sha}", flush=True)
     else:
         print(f"[GITHUB PUSH] no contradictions for {sha}", flush=True)
@@ -400,6 +481,13 @@ async def process_pull_request(payload: dict):
 
     source_ref = pull_request.get("html_url") or f"{repo or 'github'}#{number}"
     await db.insert_alert(top, source_ref, "github_pr")
+    await _record_github_lineage(
+        top,
+        diff,
+        source_ref,
+        "github_pr",
+        f"GitHub PR #{number}",
+    )
     print(f"[GITHUB PR] posted conversation comment on {repo}#{number}", flush=True)
 
 

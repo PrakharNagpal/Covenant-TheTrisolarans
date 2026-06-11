@@ -8,6 +8,7 @@ import json
 _client: Any | None = None
 _demo_decisions: list[dict] | None = None
 _demo_lineage: list[dict] | None = None
+_seed_lineage_keys: set[tuple[str | None, str | None]] | None = None
 _demo_alerts: list[dict] = []
 _demo_pending_overwrites: dict[str, dict] = {}
 
@@ -37,6 +38,16 @@ def _load_demo_lineage() -> list[dict]:
     if _demo_lineage is None:
         _demo_lineage = _load_json("lineage_links.json")
     return _demo_lineage
+
+
+def _load_seed_lineage_keys() -> set[tuple[str | None, str | None]]:
+    global _seed_lineage_keys
+    if _seed_lineage_keys is None:
+        _seed_lineage_keys = {
+            (link.get("decision_id"), link.get("artifact_ref"))
+            for link in _load_json("lineage_links.json")
+        }
+    return _seed_lineage_keys
 
 
 def _now_iso() -> str:
@@ -102,6 +113,61 @@ async def upsert_decision(decision: dict):
         return
 
     await _run_sync(lambda: get_client().table("decisions").upsert(decision).execute())
+
+
+async def insert_lineage_links(decision_id: str | None, links: list[dict]):
+    if not decision_id or not links:
+        return
+
+    rows = [
+        {
+            "decision_id": decision_id,
+            "artifact_type": link.get("artifact_type") or link.get("type") or "artifact",
+            "artifact_ref": link.get("artifact_ref") or link.get("target") or "",
+            "note": link.get("note"),
+        }
+        for link in links
+        if link.get("artifact_ref") or link.get("target")
+    ]
+    if not rows:
+        return
+
+    if _is_demo_mode():
+        lineage = _load_demo_lineage()
+        existing_refs = {
+            (link.get("decision_id"), link.get("artifact_ref"))
+            for link in lineage
+        }
+        for row in rows:
+            key = (row["decision_id"], row["artifact_ref"])
+            if key in existing_refs:
+                continue
+            lineage.append(
+                {
+                    "id": f"demo-lineage-{len(lineage) + 1}",
+                    **row,
+                    "created_at": _now_iso(),
+                }
+            )
+            existing_refs.add(key)
+        return
+
+    def insert_missing():
+        client = get_client()
+        for row in rows:
+            existing = (
+                client.table("lineage_links")
+                .select("id")
+                .eq("decision_id", row["decision_id"])
+                .eq("artifact_ref", row["artifact_ref"])
+                .limit(1)
+                .execute()
+            )
+            if existing.data:
+                continue
+            client.table("lineage_links").insert(row).execute()
+
+    await _run_sync(insert_missing)
 
 
 async def delete_decisions(decision_ids: list[str]):
@@ -334,21 +400,94 @@ async def get_decision(decision_id: str) -> dict | None:
 
 
 async def get_lineage(decision_id: str) -> list[dict]:
+    decision = await get_decision(decision_id)
+
     if _is_demo_mode():
-        return [
+        links = [
             link
             for link in _load_demo_lineage()
             if link.get("decision_id") == decision_id
         ]
+        if decision and decision.get("source_ref"):
+            links.insert(
+                0,
+                {
+                    "id": f"{decision_id}-source",
+                    "decision_id": decision_id,
+                    "artifact_type": decision.get("source") or "source",
+                    "artifact_ref": decision["source_ref"],
+                    "note": "Original decision source captured from the live integration.",
+                },
+            )
+        for alert in _demo_alerts:
+            if alert.get("decision_id") != decision_id or not alert.get("source_ref"):
+                continue
+            links.append(
+                {
+                    "id": f"{alert.get('id')}-source",
+                    "decision_id": decision_id,
+                    "artifact_type": alert.get("source") or "alert",
+                    "artifact_ref": alert["source_ref"],
+                    "note": alert.get("message") or alert.get("contradiction_explanation"),
+                }
+            )
+        return links
 
-    result = await _run_sync(
-        lambda: get_client()
-        .table("lineage_links")
-        .select("*")
-        .eq("decision_id", decision_id)
-        .execute()
-    )
-    return result.data or []
+    def query_lineage():
+        client = get_client()
+        lineage_result = (
+            client.table("lineage_links")
+            .select("*")
+            .eq("decision_id", decision_id)
+            .order("created_at", desc=False)
+            .execute()
+        )
+        alert_result = (
+            client.table("alerts")
+            .select("*")
+            .eq("decision_id", decision_id)
+            .order("created_at", desc=False)
+            .execute()
+        )
+        return lineage_result.data or [], alert_result.data or []
+
+    lineage_rows, alert_rows = await _run_sync(query_lineage)
+    seed_lineage_keys = _load_seed_lineage_keys()
+    links = [
+        link
+        for link in lineage_rows
+        if (link.get("decision_id"), link.get("artifact_ref")) not in seed_lineage_keys
+    ]
+
+    if decision and decision.get("source_ref"):
+        links.insert(
+            0,
+            {
+                "id": f"{decision_id}-source",
+                "decision_id": decision_id,
+                "artifact_type": decision.get("source") or "source",
+                "artifact_ref": decision["source_ref"],
+                "note": "Original decision source captured from the live integration.",
+            },
+        )
+
+    existing_refs = {link.get("artifact_ref") for link in links}
+    for alert in alert_rows:
+        source_ref = alert.get("source_ref")
+        if not source_ref or source_ref in existing_refs:
+            continue
+        links.append(
+            {
+                "id": f"{alert.get('id')}-source",
+                "decision_id": decision_id,
+                "artifact_type": alert.get("source") or "alert",
+                "artifact_ref": source_ref,
+                "note": alert.get("message") or alert.get("contradiction_explanation"),
+            }
+        )
+        existing_refs.add(source_ref)
+
+    return links
 
 
 get_decision_by_id = get_decision
