@@ -158,7 +158,7 @@ def format_pr_comment(contradiction: dict, sha: str, diff: str = "") -> str:
 {contradiction.get("explanation_detail") or contradiction.get("contradiction_explanation") or contradiction.get("explanation", "")}
 ---
 *Is this intentional? 👍 to confirm (Covenant updates its priors), 👎 to flag for review.*
-[View in Covenant →]({COVENANT_URL}/decisions/{d.get("id", "")})"""
+[View in Covenant →]({COVENANT_URL}/lineage?id={d.get("id", "")})"""
 
 
 def format_linear_contradiction_comment(contradiction: dict, new_text: str) -> str:
@@ -186,7 +186,7 @@ This Linear update may break a promise your team made.
 **Why I flagged it ({contradiction.get("severity", "unknown")}):**
 {explanation}
 
-[View in Covenant]({COVENANT_URL}/decisions/{d.get("id", "")})"""
+[View in Covenant]({COVENANT_URL}/lineage?id={d.get("id", "")})"""
 
 
 def _linear_issue_id(data: dict) -> str | None:
@@ -658,7 +658,7 @@ def format_notion_contradiction_comment(contradiction: dict) -> str:
         f"These notes may conflict with a decision made on {date} by {participants}.\n\n"
         f"Past decision: {d.get('summary', '')}\n\n"
         f"Why flagged ({contradiction.get('severity', 'unknown')}): {explanation}\n\n"
-        f"View in Covenant: {COVENANT_URL}/decisions/{d.get('id', '')}"
+        f"View in Covenant: {COVENANT_URL}/lineage?id={d.get('id', '')}"
     )
 
 
