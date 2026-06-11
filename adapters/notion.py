@@ -163,7 +163,16 @@ _TEXT_BLOCK_TYPES = {
 async def get_page_blocks(page_id: str) -> list[dict]:
     notion = NotionClient(auth=os.getenv("NOTION_TOKEN", ""))
     response = await notion.blocks.children.list(block_id=page_id)
-    return response.get("results", [])
+    blocks = response.get("results", [])
+
+    all_blocks: list[dict] = []
+    for block in blocks:
+        all_blocks.append(block)
+        if block.get("has_children"):
+            child_blocks = await get_page_blocks(block["id"])
+            all_blocks.extend(child_blocks)
+
+    return all_blocks
 
 
 def _covenant_callout_present(blocks: list[dict], decision_id: str) -> bool:
