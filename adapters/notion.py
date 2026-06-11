@@ -56,7 +56,10 @@ async def poll_notion_once() -> int:
 
 
 async def poll_meeting_pages_once() -> None:
-    """Check each page in NOTION_WATCHED_PAGES for contradictions and post callouts."""
+    """Classify + store new decisions from watched pages, then check for contradictions."""
+    import uuid
+    from datetime import datetime, timezone
+    from agent.classifier import classify_decision
     from agent.contradiction import find_contradictions
     from api.routes.webhooks import format_notion_contradiction_comment
 
@@ -65,7 +68,6 @@ async def poll_meeting_pages_once() -> None:
         return
 
     page_ids = [p.strip() for p in raw.split(",") if p.strip()]
-    decisions = await db.get_all_decisions()
 
     for page_id in page_ids:
         try:
@@ -77,6 +79,41 @@ async def poll_meeting_pages_once() -> None:
         if not text.strip():
             continue
 
+        # ── 1. Store new decisions from individual blocks ─────────────────────
+        new_blocks = []
+        for block in blocks:
+            block_type = block.get("type")
+            if block_type not in _TEXT_BLOCK_TYPES:
+                continue
+            block_text = _plain_text(block.get(block_type, {}).get("rich_text"))
+            if not block_text.strip():
+                continue
+            block_id = block.get("id", "")
+            source_ref = f"notion-page/{page_id}/{block_id}"
+            existing = await db.get_decision_by_source_ref("notion", source_ref)
+            if not existing:
+                new_blocks.append((block_text, source_ref))
+
+        if new_blocks:
+            classifications = await asyncio.gather(
+                *(classify_decision(bt) for bt, _ in new_blocks)
+            )
+            for (block_text, source_ref), classification in zip(new_blocks, classifications):
+                if classification.get("label") == "DECISION":
+                    new_decision = {
+                        "id": str(uuid.uuid4()),
+                        "summary": classification.get("extracted_choice") or block_text[:200],
+                        "rationale": block_text,
+                        "participants": [],
+                        "source": "notion",
+                        "source_ref": source_ref,
+                        "created_at": datetime.now(timezone.utc).isoformat(),
+                    }
+                    await db.upsert_decision(new_decision)
+                    print(f"[NOTION PAGE POLLER] stored decision: {new_decision['summary'][:60]}", flush=True)
+
+        # ── 2. Check full page text for contradictions ────────────────────────
+        decisions = await db.get_all_decisions()
         contradictions = await find_contradictions(text, decisions)
         if not contradictions:
             continue
@@ -84,8 +121,6 @@ async def poll_meeting_pages_once() -> None:
         top = contradictions[0]
         decision_id = (top.get("decision") or {}).get("id", "")
 
-        # Skip only if our callout is already visible on the page for this decision.
-        # This means the user can trigger a fresh callout by deleting the old one.
         if _covenant_callout_present(blocks, decision_id):
             continue
 
