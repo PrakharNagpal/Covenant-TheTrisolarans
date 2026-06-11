@@ -26,9 +26,14 @@ const artifactIcons: Record<string, string> = {
   github_commit: "⑂",
   github_pr: "⑃",
   issue: "▣",
+  linear: "◆",
+  notion: "▤",
+  notion_page: "▤",
   package: "📦",
   pr: "⑃",
   route: "🔀",
+  slack: "☷",
+  slack_message: "☷",
 };
 
 function artifactLabel(type: string) {

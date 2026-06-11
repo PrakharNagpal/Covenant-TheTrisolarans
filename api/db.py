@@ -54,6 +54,62 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _slack_source_url(source_ref: str) -> str:
+    if "/" not in source_ref:
+        return source_ref
+
+    channel, ts = source_ref.split("/", 1)
+    compact_ts = ts.replace(".", "")
+    workspace_url = os.getenv("SLACK_WORKSPACE_URL", "").rstrip("/")
+    if workspace_url:
+        return f"{workspace_url}/archives/{channel}/p{compact_ts}"
+
+    team_id = os.getenv("SLACK_TEAM_ID", "")
+    if team_id:
+        return f"https://app.slack.com/client/{team_id}/{channel}/thread/{channel}-{compact_ts}"
+
+    return source_ref
+
+
+def _source_artifact(
+    decision_id: str,
+    source: str | None,
+    source_ref: str,
+    row_id: str,
+    note: str | None = None,
+) -> dict:
+    normalized_source = (source or "source").lower()
+    artifact_ref = source_ref
+    artifact_type = normalized_source
+    source_name = normalized_source.replace("_", " ").title()
+
+    if "slack" in normalized_source:
+        artifact_type = "slack_message"
+        artifact_ref = _slack_source_url(source_ref)
+        source_name = "Slack message"
+    elif "notion" in normalized_source:
+        artifact_type = "notion_page"
+        source_name = "Notion page"
+    elif "linear" in normalized_source:
+        artifact_type = "linear"
+        source_name = "Linear update"
+    elif "github_pr" in normalized_source:
+        artifact_type = "github_pr"
+        source_name = "GitHub PR"
+    elif "github" in normalized_source or "commit" in normalized_source:
+        artifact_type = "github"
+        source_name = "GitHub source"
+
+    return {
+        "id": row_id,
+        "decision_id": decision_id,
+        "artifact_type": artifact_type,
+        "artifact_ref": artifact_ref,
+        "source_ref": source_ref,
+        "note": note or f"Original decision source: {source_name}.",
+    }
+
+
 def _demo_alert_from_contradiction(
     contradiction: dict,
     source_ref: str,
@@ -411,25 +467,24 @@ async def get_lineage(decision_id: str) -> list[dict]:
         if decision and decision.get("source_ref"):
             links.insert(
                 0,
-                {
-                    "id": f"{decision_id}-source",
-                    "decision_id": decision_id,
-                    "artifact_type": decision.get("source") or "source",
-                    "artifact_ref": decision["source_ref"],
-                    "note": "Original decision source captured from the live integration.",
-                },
+                _source_artifact(
+                    decision_id,
+                    decision.get("source"),
+                    decision["source_ref"],
+                    f"{decision_id}-source",
+                ),
             )
         for alert in _demo_alerts:
             if alert.get("decision_id") != decision_id or not alert.get("source_ref"):
                 continue
             links.append(
-                {
-                    "id": f"{alert.get('id')}-source",
-                    "decision_id": decision_id,
-                    "artifact_type": alert.get("source") or "alert",
-                    "artifact_ref": alert["source_ref"],
-                    "note": alert.get("message") or alert.get("contradiction_explanation"),
-                }
+                _source_artifact(
+                    decision_id,
+                    alert.get("source") or "alert",
+                    alert["source_ref"],
+                    f"{alert.get('id')}-source",
+                    alert.get("message") or alert.get("contradiction_explanation"),
+                )
             )
         return links
 
@@ -462,30 +517,30 @@ async def get_lineage(decision_id: str) -> list[dict]:
     if decision and decision.get("source_ref"):
         links.insert(
             0,
-            {
-                "id": f"{decision_id}-source",
-                "decision_id": decision_id,
-                "artifact_type": decision.get("source") or "source",
-                "artifact_ref": decision["source_ref"],
-                "note": "Original decision source captured from the live integration.",
-            },
+            _source_artifact(
+                decision_id,
+                decision.get("source"),
+                decision["source_ref"],
+                f"{decision_id}-source",
+            ),
         )
 
     existing_refs = {link.get("artifact_ref") for link in links}
     for alert in alert_rows:
         source_ref = alert.get("source_ref")
-        if not source_ref or source_ref in existing_refs:
+        if not source_ref:
             continue
-        links.append(
-            {
-                "id": f"{alert.get('id')}-source",
-                "decision_id": decision_id,
-                "artifact_type": alert.get("source") or "alert",
-                "artifact_ref": source_ref,
-                "note": alert.get("message") or alert.get("contradiction_explanation"),
-            }
+        artifact = _source_artifact(
+            decision_id,
+            alert.get("source") or "alert",
+            source_ref,
+            f"{alert.get('id')}-source",
+            alert.get("message") or alert.get("contradiction_explanation"),
         )
-        existing_refs.add(source_ref)
+        if artifact["artifact_ref"] in existing_refs:
+            continue
+        links.append(artifact)
+        existing_refs.add(artifact["artifact_ref"])
 
     return links
 

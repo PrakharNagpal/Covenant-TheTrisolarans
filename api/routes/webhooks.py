@@ -613,9 +613,10 @@ async def process_linear_comment(data: dict):
         return
 
     try:
+        source_ref = data.get("url") or f"comment/{data.get('id', '')}"
         await _process_linear_decision_text(
             text=text,
-            source_ref=f"comment/{data.get('id', '')}",
+            source_ref=source_ref,
             issue_id=_linear_issue_id(data),
             participant=_linear_actor(data),
             created_at=data.get("createdAt") or data.get("created_at"),
@@ -627,9 +628,10 @@ async def process_linear_comment(data: dict):
 async def process_linear_issue(data: dict):
     print(f"[LINEAR WEBHOOK] processing issue {data.get('id', '')}", flush=True)
     try:
+        source_ref = data.get("url") or f"issue/{data.get('id', '')}"
         await _process_linear_decision_text(
             text=_linear_issue_text(data),
-            source_ref=f"issue/{data.get('id', '')}",
+            source_ref=source_ref,
             issue_id=data.get("id"),
             participant=_linear_actor(data),
             created_at=data.get("createdAt") or data.get("created_at"),

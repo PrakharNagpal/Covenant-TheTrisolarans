@@ -33,6 +33,7 @@ def row_to_decision(row: dict) -> dict:
         "rationale": _rich_text(props.get("Rationale")),
         "participants": _participants(props.get("Participants")),
         "source": "notion",
+        "source_ref": row.get("url") or row.get("id"),
         "created_at": row.get("created_time"),
     }
 
