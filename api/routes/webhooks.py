@@ -641,6 +641,65 @@ async def process_slack_interaction(payload: dict):
         action_id == "covenant_overwrite_yes",
     )
 
+def format_notion_contradiction_comment(contradiction: dict) -> str:
+    d = contradiction["decision"]
+    participants = ", ".join(d.get("participants", []))
+    date = _format_date(d.get("created_at"))
+    explanation = (
+        contradiction.get("explanation_detail")
+        or contradiction.get("contradiction_explanation")
+        or contradiction.get("explanation")
+        or "This appears to contradict an earlier decision."
+    )
+    return (
+        f"Covenant — Promise Check\n\n"
+        f"These notes may conflict with a decision made on {date} by {participants}.\n\n"
+        f"Past decision: {d.get('summary', '')}\n\n"
+        f"Why flagged ({contradiction.get('severity', 'unknown')}): {explanation}\n\n"
+        f"View in Covenant: {COVENANT_URL}/decisions/{d.get('id', '')}"
+    )
+
+
+async def process_notion_page(page_id: str):
+    from agent.contradiction import find_contradictions
+    from adapters.notion import get_page_text, append_contradiction_callout
+
+    try:
+        text = await get_page_text(page_id)
+    except Exception as exc:
+        print(f"[NOTION WEBHOOK] failed to fetch page {page_id}: {exc}", flush=True)
+        return
+
+    if not text.strip():
+        print(f"[NOTION WEBHOOK] empty page {page_id}; skipping", flush=True)
+        return
+
+    decisions = await db.get_all_decisions()
+    contradictions = await find_contradictions(text, decisions)
+
+    if not contradictions:
+        print(f"[NOTION WEBHOOK] no contradictions for page {page_id}", flush=True)
+        return
+
+    top = contradictions[0]
+    decision_id = (top.get("decision") or {}).get("id", "")
+    source_ref = f"notion/{page_id}/{decision_id}"
+
+    existing_alert = await db.get_alert_by_source_ref("notion", source_ref)
+    if existing_alert:
+        print(f"[NOTION WEBHOOK] already alerted for {source_ref}", flush=True)
+        return
+
+    await db.insert_alert(top, source_ref, "notion")
+
+    message = format_notion_contradiction_comment(top)
+    try:
+        await append_contradiction_callout(page_id, message)
+        print(f"[NOTION WEBHOOK] posted callout on page {page_id}", flush=True)
+    except Exception as exc:
+        print(f"[NOTION WEBHOOK] failed to post callout on page {page_id}: {exc}", flush=True)
+
+
 async def process_linear_comment(data: dict):
     print(f"[LINEAR WEBHOOK] processing comment {data.get('id', '')}", flush=True)
     text = data.get("body", "")
@@ -719,6 +778,47 @@ async def slack_webhook(req: Request, bg: BackgroundTasks):
         event = payload["event"]
         if event.get("type") == "message" and not event.get("subtype"):
             bg.add_task(process_slack_message, event)
+    return {"ok": True}
+
+
+@router.post("/webhooks/notion")
+async def notion_webhook(req: Request, bg: BackgroundTasks):
+    from adapters.notion import verify_notion_signature
+
+    payload_bytes = await req.body()
+    signature = req.headers.get("x-notion-signature", "")
+
+    notion_secret = os.getenv("NOTION_WEBHOOK_SECRET", "")
+    if notion_secret and not verify_notion_signature(payload_bytes, signature):
+        raise HTTPException(status_code=401, detail="Invalid Notion signature")
+
+    try:
+        payload = json.loads(payload_bytes)
+    except json.JSONDecodeError as exc:
+        raise HTTPException(status_code=400, detail="Invalid JSON payload") from exc
+
+    # Handle Notion's verification handshake
+    if "verification_token" in payload:
+        return {"challenge": payload["verification_token"]}
+
+    # Extract page ID — handle both flat and nested event formats
+    event = payload.get("event") or {}
+    entity = event.get("entity") or {}
+    page_id = (
+        entity.get("id")
+        or payload.get("entity_id")
+        or payload.get("page_id")
+    )
+    entity_type = entity.get("type") or payload.get("entity_type", "")
+    event_type = event.get("type") or payload.get("event_type", "")
+
+    if entity_type != "page" or not page_id:
+        return {"ok": True}
+
+    if event_type not in {"page.updated", "page.created", "block.created", "block.updated"}:
+        return {"ok": True}
+
+    bg.add_task(process_notion_page, page_id)
     return {"ok": True}
 
 

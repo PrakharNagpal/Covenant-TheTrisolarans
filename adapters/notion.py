@@ -1,5 +1,7 @@
 # Lane: P2 backend
 import asyncio
+import hashlib
+import hmac
 import json
 import os
 
@@ -60,6 +62,66 @@ async def notion_poller():
         except Exception as exc:
             print(f"[NOTION POLLER] error: {exc}", flush=True)
         await asyncio.sleep(60)
+
+
+_TEXT_BLOCK_TYPES = {
+    "paragraph",
+    "heading_1",
+    "heading_2",
+    "heading_3",
+    "bulleted_list_item",
+    "numbered_list_item",
+    "to_do",
+    "toggle",
+    "quote",
+}
+
+
+async def get_page_text(page_id: str) -> str:
+    notion = NotionClient(auth=os.getenv("NOTION_TOKEN", ""))
+    response = await notion.blocks.children.list(block_id=page_id)
+    texts = []
+    for block in response.get("results", []):
+        block_type = block.get("type")
+        if block_type not in _TEXT_BLOCK_TYPES:
+            continue
+        content = block.get(block_type, {})
+        text = _plain_text(content.get("rich_text"))
+        if text:
+            texts.append(text)
+    return "\n".join(texts)
+
+
+async def append_contradiction_callout(page_id: str, message: str) -> None:
+    notion = NotionClient(auth=os.getenv("NOTION_TOKEN", ""))
+    await notion.blocks.children.append(
+        block_id=page_id,
+        children=[
+            {
+                "object": "block",
+                "type": "callout",
+                "callout": {
+                    "rich_text": [
+                        {
+                            "type": "text",
+                            "text": {"content": message[:2000]},
+                        }
+                    ],
+                    "icon": {"type": "emoji", "emoji": "⚠️"},
+                    "color": "red_background",
+                },
+            }
+        ],
+    )
+
+
+def verify_notion_signature(payload_bytes: bytes, signature: str) -> bool:
+    secret = os.getenv("NOTION_WEBHOOK_SECRET", "")
+    if not secret or not signature:
+        return False
+    hex_sig = signature.removeprefix("sha256=").strip()
+    expected = hmac.new(secret.encode(), payload_bytes, hashlib.sha256).hexdigest()
+    return hmac.compare_digest(hex_sig, expected)
 
 
 class SeedNotionAdapter:
