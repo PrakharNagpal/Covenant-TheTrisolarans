@@ -83,7 +83,9 @@ async def poll_meeting_pages_once() -> None:
 
         top = contradictions[0]
         decision_id = (top.get("decision") or {}).get("id", "")
-        source_ref = f"notion/{page_id}/{decision_id}"
+        # Include a short hash of the page text so new content produces a new key
+        text_hash = hashlib.sha256(text.encode()).hexdigest()[:12]
+        source_ref = f"notion/{page_id}/{decision_id}/{text_hash}"
 
         existing = await db.get_alert_by_source_ref("notion", source_ref)
         if existing:
