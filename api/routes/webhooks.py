@@ -31,7 +31,7 @@ router = APIRouter()
 
 # COVENANT_URL is the frontend (Vercel) URL used in comment links.
 # Set COVENANT_URL in Render env vars to your Vercel deployment URL.
-COVENANT_URL = os.getenv("COVENANT_URL") or os.getenv("NGROK_URL") or "http://localhost:3000"
+COVENANT_URL = (os.getenv("COVENANT_URL") or os.getenv("NGROK_URL") or "http://localhost:3000").rstrip("/")
 
 
 def _verify_linear_signature(payload_bytes: bytes, signature: str) -> bool:

@@ -128,9 +128,9 @@ _TOPIC_ANCHORS = {
 
 _MIN_RELEVANCE_SCORE = 20  # 1 topic hit (20pts) is enough to reach GPT-4o
 _MAX_CANDIDATE_DECISIONS = 6
-# Below this decision count, skip topic filtering and send all decisions to GPT-4o.
-# Keeps the system useful for non-technical and business domains.
-_SMALL_SET_THRESHOLD = 40
+# Below this count, skip topic filtering and check all decisions directly.
+# Keep low enough that GPT-4o only sees genuinely related decisions.
+_SMALL_SET_THRESHOLD = 15
 
 DETAIL_PROMPT = """Expand a contradiction explanation for a GitHub PR comment.
 
