@@ -788,10 +788,6 @@ async def notion_webhook(req: Request, bg: BackgroundTasks):
     payload_bytes = await req.body()
     signature = req.headers.get("x-notion-signature", "")
 
-    notion_secret = os.getenv("NOTION_WEBHOOK_SECRET", "")
-    if notion_secret and not verify_notion_signature(payload_bytes, signature):
-        raise HTTPException(status_code=401, detail="Invalid Notion signature")
-
     try:
         payload = json.loads(payload_bytes)
     except json.JSONDecodeError as exc:
@@ -800,6 +796,10 @@ async def notion_webhook(req: Request, bg: BackgroundTasks):
     # Handle Notion's verification handshake
     if "verification_token" in payload:
         return {"challenge": payload["verification_token"]}
+
+    notion_secret = os.getenv("NOTION_WEBHOOK_SECRET", "")
+    if notion_secret and not verify_notion_signature(payload_bytes, signature):
+        raise HTTPException(status_code=401, detail="Invalid Notion signature")
 
     # Extract page ID — handle both flat and nested event formats
     event = payload.get("event") or {}
