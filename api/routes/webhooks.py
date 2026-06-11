@@ -795,7 +795,12 @@ async def notion_webhook(req: Request, bg: BackgroundTasks):
 
     # Handle Notion's verification handshake
     if "verification_token" in payload:
-        return {"challenge": payload["verification_token"]}
+        verification_token = payload["verification_token"]
+        print(
+            f"[NOTION WEBHOOK] verification token: {verification_token}",
+            flush=True,
+        )
+        return {"ok": True}
 
     notion_secret = os.getenv("NOTION_WEBHOOK_SECRET", "")
     if notion_secret and not verify_notion_signature(payload_bytes, signature):
